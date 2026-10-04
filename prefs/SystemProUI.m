@@ -7,6 +7,11 @@
 #import <spawn.h>
 #import "Common.h"    // 开关键名单一来源（-I.. 引入）
 #import "Version.h"
+// Preferences.framework 私有头（vendored 自 theos/headers，签名与真机对齐）
+#import "PBHeaders/PSTableCell.h"
+#import "PBHeaders/PSSpecifier.h"
+#import "PBHeaders/PSViewController.h"
+#import "PBHeaders/PSListController.h"
 
 extern char **environ;
 extern int notify_post(const char *name);
@@ -386,15 +391,12 @@ static void SPPrefsWrite(NSString *key, id value) {
 @end
 
 #pragma mark - 主控制器
-// Preferences.framework 的控制器基类（宿主进程里已加载；只做前向声明，运行时由系统提供实现）。
-// SystemX 的同款面板同样挂在 PSListController 上 —— 这是 PreferenceLoader 的规范姿势：
-// controllerForSpecifier: 会向子控制器发送 setSpecifier:/setRootController: 等消息。
-@interface PSListController : UIViewController
-- (UITableView *)table;
-- (void)reloadSpecifiers;
-@end
-
-@interface SystemProRootController : PSListController <UITableViewDataSource, UITableViewDelegate>
+// 基类直接来自 vendored 的 Preferences 私有头（PBHeaders/PSListController.h），
+// 与 SystemX 同款：面板控制器必须挂在 PSListController 上。
+// 表格用框架原生 specifier 模型驱动（分节 = group specifier，行 = cell specifier），
+// 只重写 cellForRow 自定义样式 —— 这是社区验证过的标准姿势；
+// 切记不要自己接管 numberOfSections/numberOfRows（会撞 PSListController 内部缓存，iOS 16 直接抛 NSRangeException）。
+@interface SystemProRootController : PSListController
 @property (nonatomic, strong) UITableView *contentTable;
 @property (nonatomic, strong) NSMutableArray<SPSection *> *model;
 @property (nonatomic, strong) NSMutableDictionary *prefs;
@@ -403,45 +405,81 @@ static void SPPrefsWrite(NSString *key, id value) {
 
 @implementation SystemProRootController
 
-// 屏蔽 PS 的 specifier 机制：表格数据全部由自绘模型驱动
-- (NSArray *)specifiers { return @[]; }
-- (void)reloadSpecifiers { }
-- (void)reloadSpecifiersAnimated:(BOOL)animated { }
+#pragma mark specifier 模型
+
+- (void)spEnsureModel { if (!self.model) [self buildModel]; }
+
+- (NSMutableArray *)specifiers {
+    [self spEnsureModel];
+    if (!_specifiers) _specifiers = [self spBuildSpecifiers];
+    return _specifiers;
+}
+
+- (NSMutableArray *)spBuildSpecifiers {
+    NSMutableArray *arr = [NSMutableArray array];
+    for (SPSection *sec in self.model) {
+        PSSpecifier *g = [PSSpecifier groupSpecifierWithName:sec.title];
+        if (sec.footer.length) [g setProperty:sec.footer forKey:@"footerText"];
+        [arr addObject:g];
+        for (SPRow *row in sec.rows) {
+            PSCellType ct = PSStaticTextCell;
+            if (row.kind == SPRowKindSwitch)      ct = PSSwitchCell;
+            else if (row.kind == SPRowKindButton) ct = PSButtonCell;
+            else if (row.kind == SPRowKindText)   ct = PSLinkCell;
+            PSSpecifier *sp = [PSSpecifier preferenceSpecifierNamed:row.title
+                                                             target:self
+                                                                set:NULL
+                                                                get:NULL
+                                                             detail:nil
+                                                               cell:ct
+                                                               edit:nil];
+            [sp setProperty:row forKey:@"spRow"];
+            if (row.key) [sp setProperty:row.key forKey:@"key"];
+            [arr addObject:sp];
+        }
+    }
+    return arr;
+}
+
+- (UITableViewStyle)tableViewStyle {
+    return UITableViewStyleInsetGrouped;
+}
 
 - (void)viewDidLoad {
     [super viewDidLoad];
+    [self spEnsureModel];
     self.title = @"systemPro";
     self.view.backgroundColor = [UIColor systemGroupedBackgroundColor];
+    self.prefs = SPPrefsLoad();
 
-    // 优先复用 PSListController 自带的表格；取不到再自建（防御式回退）
-    UITableView *tv = nil;
-    @try { tv = [super table]; } @catch (NSException *e) { tv = nil; }
-    if (!tv) {
-        tv = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStyleInsetGrouped];
-        tv.translatesAutoresizingMaskIntoConstraints = NO;
-        [self.view addSubview:tv];
-        [NSLayoutConstraint activateConstraints:@[
-            [tv.topAnchor constraintEqualToAnchor:self.view.topAnchor],
-            [tv.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
-            [tv.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
-            [tv.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
-        ]];
-    }
+    UITableView *tv = self.tableView;
+    if (!tv) tv = self.view;   // PSListController 把 view 重声明为 UITableView
     self.contentTable = tv;
-    tv.dataSource = self;
-    tv.delegate = self;
     tv.rowHeight = UITableViewAutomaticDimension;
     tv.estimatedRowHeight = 58;
     tv.backgroundColor = [UIColor systemGroupedBackgroundColor];
     [tv registerClass:[SPCell class] forCellReuseIdentifier:@"cell"];
 
-    self.hero = [[SPHeroView alloc] initWithFrame:CGRectMake(0, 0, self.view.bounds.size.width, 158)];
+    self.hero = [[SPHeroView alloc] initWithFrame:CGRectMake(0, 0, tv.bounds.size.width, 158)];
     tv.tableHeaderView = self.hero;
-
-    [self buildModel];
 }
 
-// 自绘行高交给 Auto Layout
+// 自定义读值/写值：直接读写我们的 plist + Darwin 通知（绕开 cfprefsd 缓存）
+- (id)readPreferenceValue:(PSSpecifier *)specifier {
+    NSString *key = [specifier propertyForKey:@"key"];
+    if (!key.length) return nil;
+    NSDictionary *d = [NSDictionary dictionaryWithContentsOfFile:SP_PREFS_PATH];
+    return d[key];
+}
+
+- (void)setPreferenceValue:(id)value specifier:(PSSpecifier *)specifier {
+    NSString *key = [specifier propertyForKey:@"key"];
+    if (!key.length) return;
+    SPPrefsWrite(key, value);
+    self.prefs = SPPrefsLoad();
+}
+
+// 自绘行高全部交给 Auto Layout
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
     return UITableViewAutomaticDimension;
 }
@@ -569,25 +607,14 @@ static void SPPrefsWrite(NSString *key, id value) {
     self.model = [@[sb, dt, fd, dis, ph, maint, about] mutableCopy];
 }
 
-#pragma mark - 表格数据源 / 交互
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return self.model.count; }
-
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    return self.model[section].rows.count;
-}
-
-- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
-    NSString *t = self.model[section].title;
-    return t.length ? t : nil;
-}
-
-- (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
-    NSString *f = self.model[section].footer;
-    return f.length ? f : nil;
-}
+#pragma mark - 表格数据源 / 交互（分节与行序由框架 specifier 模型负责）
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
-    SPRow *row = self.model[indexPath.section].rows[indexPath.row];
+    PSSpecifier *spec = [self specifierAtIndexPath:indexPath];
+    SPRow *row = [spec propertyForKey:@"spRow"];
+    if (![row isKindOfClass:[SPRow class]]) {
+        return [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+    }
     SPCell *cell = [tableView dequeueReusableCellWithIdentifier:@"cell" forIndexPath:indexPath];
     id value = (row.kind == SPRowKindInfo) ? row.defValue : self.prefs[row.key];
     [cell configureWithRow:row value:value];
@@ -604,7 +631,9 @@ static void SPPrefsWrite(NSString *key, id value) {
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
-    SPRow *row = self.model[indexPath.section].rows[indexPath.row];
+    PSSpecifier *spec = [self specifierAtIndexPath:indexPath];
+    SPRow *row = [spec propertyForKey:@"spRow"];
+    if (![row isKindOfClass:[SPRow class]]) return;
     if (row.kind == SPRowKindSwitch) {
         SPCell *cell = (SPCell *)[tableView cellForRowAtIndexPath:indexPath];
         BOOL on = !cell.toggle.isOn;

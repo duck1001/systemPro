@@ -1,6 +1,6 @@
 # systemPro
 
-标识符 `com.sytem.pro` · 作者 **D** · 当前版本 **0.0.1-3**
+标识符 `com.sytem.pro` · 作者 **D** · 当前版本 **0.0.1-4**
 
 systemPro 是一套手搓的越狱功能增强插件：功能面参考 SystemX（com.wkk.systembox）的逆向分析
 成果（挂钩点均为实测验证过的位置），**代码全部自研**，设置界面为自绘的高级 UI，并通过
@@ -112,9 +112,13 @@ make install                             # 装到设备并注销
 ## 开发注意（踩坑记录）
 
 - **面板控制器基类**：PreferenceLoader 的 detail 控制器必须挂在 `PSViewController` / `PSListController`
-  系上。纯 `UIViewController` 会在 Settings 点击入口时崩在 `PSListController controllerForSpecifier:`
-  （它要对子控制器调 `setSpecifier:` / `setRootController:`，直接转发崩溃）。本工程 = `PSViewController`
-  子类 + `-Wl,-undefined,dynamic_lookup` 链接。
+  系上。纯 `UIViewController` 会在 Settings 点击入口时崩在 `PSListController controllerForSpecifier:`。
+  本工程 = `PSListController` 子类 + vendored 私有头（`prefs/PBHeaders/`）+ `-Wl,-undefined,dynamic_lookup` 链接。
+- **面板表格必须走框架 specifier 模型**：分节 = group specifier、行 = cell specifier，只重写
+  `tableView:cellForRowAtIndexPath:` 自定义样式。自己接管 numberOfSections/numberOfRows 会在
+  iOS 16 崩在 `PSListController _tableView:heightForCustomInSection:`（NSRangeException）。
+- **bundle 的资源文件必须放 `prefs/Resources/`**：theos 只把这个目录装进 `.bundle`；
+  Info.plist 放错位置会导致面板根本无法加载（点了就闪退）。
 - **ARC 指针**：`id *` / `T **` 强转与出参在 ARC 下会编译失败，用 `void **` + `(__bridge id)` 或显式所有权限定绕开。
 - **logos 文件完整性**：每次批量编辑后跑一遍括号配平 + `%hook`/`%end` 计数再推 CI。
 
