@@ -28,6 +28,9 @@ edit prefs/Info.plist "s#<string>[0-9][0-9.]*-[0-9][0-9]*</string>#<string>$new<
 # 3) prefs/Version.h
 edit prefs/Version.h "s/#define SP_VERSION @\".*\"/#define SP_VERSION @\"$new\"/"
 
+# 4) README 版本行
+edit README.md "s/当前版本 \*\*[0-9][0-9.]*-[0-9][0-9]*\*\*/当前版本 **$new**/"
+
 echo "已同步到 $new："
 echo "  control          -> $(grep '^Version:' control)"
 echo "  prefs/Version.h  -> $(grep SP_VERSION prefs/Version.h)"

@@ -386,7 +386,12 @@ static void SPPrefsWrite(NSString *key, id value) {
 @end
 
 #pragma mark - 主控制器
-@interface SystemProRootController : UIViewController <UITableViewDataSource, UITableViewDelegate>
+// PS 框架的控制器基类（Preferences.framework 在宿主进程里已加载；这里只做前向声明，
+// 运行时由系统提供实现 —— controllerForSpecifier: 会调用它的 setSpecifier:/setRootController:）
+@interface PSViewController : UIViewController
+@end
+
+@interface SystemProRootController : PSViewController <UITableViewDataSource, UITableViewDelegate>
 @property (nonatomic, strong) UITableView *table;
 @property (nonatomic, strong) NSMutableArray<SPSection *> *model;
 @property (nonatomic, strong) NSMutableDictionary *prefs;

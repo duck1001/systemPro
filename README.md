@@ -1,6 +1,6 @@
 # systemPro
 
-标识符 `com.sytem.pro` · 作者 **D** · 当前版本 **0.0.1-1**
+标识符 `com.sytem.pro` · 作者 **D** · 当前版本 **0.0.1-2**
 
 systemPro 是一套手搓的越狱功能增强插件：功能面参考 SystemX（com.wkk.systembox）的逆向分析
 成果（挂钩点均为实测验证过的位置），**代码全部自研**，设置界面为自绘的高级 UI，并通过
@@ -108,6 +108,15 @@ make install                             # 装到设备并注销
 3. 伪装电量：改完可等系统刷新或注销；个别版本需补 `updateBatteryState:` 刷新
 4. 资源库禁用：目前拦回调；若入口仍在，需要补手势层拦截
 5. 分隔线类名在个别版本为 `_UITableViewCellSeparatorView`（两个都挂了）
+
+## 开发注意（踩坑记录）
+
+- **面板控制器基类**：PreferenceLoader 的 detail 控制器必须挂在 `PSViewController` / `PSListController`
+  系上。纯 `UIViewController` 会在 Settings 点击入口时崩在 `PSListController controllerForSpecifier:`
+  （它要对子控制器调 `setSpecifier:` / `setRootController:`，直接转发崩溃）。本工程 = `PSViewController`
+  子类 + `-Wl,-undefined,dynamic_lookup` 链接。
+- **ARC 指针**：`id *` / `T **` 强转与出参在 ARC 下会编译失败，用 `void **` + `(__bridge id)` 或显式所有权限定绕开。
+- **logos 文件完整性**：每次批量编辑后跑一遍括号配平 + `%hook`/`%end` 计数再推 CI。
 
 ## 与 SystemX 的关系
 
