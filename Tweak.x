@@ -62,8 +62,8 @@ id SPReadIvarObject(id obj, const char *name) {
     Ivar iv = class_getInstanceVariable(object_getClass(obj), name);
     if (!iv) return nil;
     ptrdiff_t off = ivar_getOffset(iv);
-    id __unsafe_unretained *slot = (id __unsafe_unretained *)((uint8_t *)(__bridge void *)obj + off);
-    return *slot;
+    void **slot = (void **)((uint8_t *)(__bridge void *)obj + off);
+    return (__bridge id)(*slot);
 }
 
 // ---------- dpkg-status 自检（可选门禁） ----------

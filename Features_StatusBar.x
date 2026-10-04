@@ -46,8 +46,8 @@ static void SPDateTimeApply(id displayItem) {
     NSString *dFmt = SPString(kSBCDateTimeDateFormat,  @"E MM/dd");
     BOOL english = SPBool(kSBCDateTimeEnglishDate);
 
-    NSDateFormatter *tf = SPFormatter(tFmt, NO, &gTimeFmt, &gTimeFmtStr);
-    NSDateFormatter *df = SPFormatter(dFmt, english, &gDateFmt, &gDateFmtStr);
+    NSDateFormatter *tf = SPFormatter(tFmt, NO, YES);
+    NSDateFormatter *df = SPFormatter(dFmt, english, NO);
     NSString *timeStr = [tf stringFromDate:now];
     NSString *dateStr = [df stringFromDate:now];
 
@@ -80,7 +80,7 @@ static void SPSetRingerMuted(BOOL muted) {
     id inst = ((id (*)(id, SEL))objc_msgSend)(asc, NSSelectorFromString(@"sharedAVSystemController"));
     SEL s = NSSelectorFromString(@"setAttribute:forKey:error:");
     if ([inst respondsToSelector:s]) {
-        ((BOOL (*)(id, SEL, id, id, NSError **))objc_msgSend)(inst, s, @(muted), @"RingerMuted", NULL);
+        ((BOOL (*)(id, SEL, id, id, NSError *__autoreleasing *))objc_msgSend)(inst, s, @(muted), @"RingerMuted", NULL);
     }
 }
 
@@ -187,6 +187,12 @@ static inline BOOL SPFakeBatteryValue(int *out) {
     int fake;
     if (SPFakeBatteryValue(&fake) && [self respondsToSelector:NSSelectorFromString(@"setText:")]) {
         ((void (*)(id, SEL, id))objc_msgSend)(self, NSSelectorFromString(@"setText:"),
+            [NSString stringWithFormat:@"%d%%", fake]);
+    }
+    return ret;
+}
+%end
+void (*)(id, SEL, id))objc_msgSend)(self, NSSelectorFromString(@"setText:"),
             [NSString stringWithFormat:@"%d%%", fake]);
     }
     return ret;
