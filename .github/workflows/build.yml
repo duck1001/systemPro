@@ -17,7 +17,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scheme: [ rootless, roothide ]
+        # roothide 需要 roothide/theos 分支，用独立 job 处理（见仓库说明）；默认只出 rootless
+        scheme: [ rootless ]
     env:
       THEOS: ${{ github.workspace }}/theos
     steps:
