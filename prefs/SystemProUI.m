@@ -714,7 +714,3 @@ static void SPPrefsWrite(NSString *key, id value) {
 }
 
 @end
-l];
-}
-
-@end

@@ -21,7 +21,9 @@ static NSDateFormatter *gDateFmt = nil;
 static NSString *gTimeFmtStr = nil;
 static NSString *gDateFmtStr = nil;
 
-static NSDateFormatter *SPFormatter(NSString *fmt, BOOL english, NSDateFormatter **slot, NSString **slotStr) {
+static NSDateFormatter *SPFormatter(NSString *fmt, BOOL english, BOOL isTime) {
+    NSDateFormatter *__strong *slot = isTime ? &gTimeFmt : &gDateFmt;
+    NSString *__strong *slotStr     = isTime ? &gTimeFmtStr : &gDateFmtStr;
     if (*slot && [*slotStr isEqualToString:fmt]) return *slot;
     NSDateFormatter *f = [[NSDateFormatter alloc] init];
     f.dateFormat = fmt;
@@ -187,12 +189,6 @@ static inline BOOL SPFakeBatteryValue(int *out) {
     int fake;
     if (SPFakeBatteryValue(&fake) && [self respondsToSelector:NSSelectorFromString(@"setText:")]) {
         ((void (*)(id, SEL, id))objc_msgSend)(self, NSSelectorFromString(@"setText:"),
-            [NSString stringWithFormat:@"%d%%", fake]);
-    }
-    return ret;
-}
-%end
-void (*)(id, SEL, id))objc_msgSend)(self, NSSelectorFromString(@"setText:"),
             [NSString stringWithFormat:@"%d%%", fake]);
     }
     return ret;

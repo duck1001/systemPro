@@ -5,7 +5,6 @@ SystemProPrefs_FILES = SystemProUI.m
 SystemProPrefs_INSTALL_PATH = /Library/PreferenceBundles
 SystemProPrefs_CFLAGS = -fobjc-arc -Wno-deprecated-declarations -I..
 SystemProPrefs_FRAMEWORKS = UIKit Foundation QuartzCore
-SystemProPrefs_PRIVATE_FRAMEWORKS = Preferences
 
 include $(THEOS_MAKE_PATH)/bundle.mk
 
