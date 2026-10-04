@@ -1,0 +1,10 @@
+# Theos 构建产物
+packages/
+.theos/
+obj/
+*.o
+*.deb
+
+# 编辑器 / 系统
+.DS_Store
+*.swp
