@@ -11,14 +11,54 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
-    name: Build (${{ matrix.scheme }})
+  build-roothide:
+    name: Build (roothide)
     runs-on: macos-14
-    strategy:
-      fail-fast: false
-      matrix:
-        # roothide 需要 roothide/theos 分支，用独立 job 处理（见仓库说明）；默认只出 rootless
-        scheme: [ rootless ]
+    env:
+      THEOS: ${{ github.workspace }}/theos
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: brew install ldid xz
+
+      - name: Fetch Theos (roothide fork)
+        run: |
+          git clone --recursive https://github.com/roothide/theos.git "$THEOS"
+          rm -rf "$THEOS/sdks"
+          git clone --depth 1 https://github.com/theos/sdks.git "$THEOS/sdks"
+          echo "$THEOS/bin" >> "$GITHUB_PATH"
+
+      - name: Build package (roothide)
+        run: make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide
+
+      - name: Show package
+        run: ls -la packages/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: systemPro-roothide-deb
+          path: packages/*.deb
+          if-no-files-found: error
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: packages/*.deb
+          name: systemPro ${{ github.ref_name }}
+          body: |
+            systemPro 自动打包（roothide 优先 + rootless）。
+
+            安装：Sileo / Filza 打开 deb 安装，或 `dpkg -i systemPro_*.deb`。
+
+  build-rootless:
+    name: Build (rootless)
+    runs-on: macos-14
+    needs: build-roothide
+    if: always()
     env:
       THEOS: ${{ github.workspace }}/theos
     steps:
@@ -35,8 +75,8 @@ jobs:
           git clone --depth 1 https://github.com/theos/sdks.git "$THEOS/sdks"
           echo "$THEOS/bin" >> "$GITHUB_PATH"
 
-      - name: Build package
-        run: make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=${{ matrix.scheme }}
+      - name: Build package (rootless)
+        run: make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
 
       - name: Show package
         run: ls -la packages/
@@ -44,7 +84,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: systemPro-${{ matrix.scheme }}-deb
+          name: systemPro-rootless-deb
           path: packages/*.deb
           if-no-files-found: error
 
@@ -55,5 +95,6 @@ jobs:
           files: packages/*.deb
           name: systemPro ${{ github.ref_name }}
           body: |
-            systemPro 自动打包（${{ matrix.scheme }}）。
-            安装：Filza / Sileo / dpkg -i systemPro_*.deb
+            systemPro 自动打包（roothide 优先 + rootless）。
+
+            安装：Sileo / Filza 打开 deb 安装，或 `dpkg -i systemPro_*.deb`。

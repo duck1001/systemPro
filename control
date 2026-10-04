@@ -7,4 +7,3 @@ Maintainer: D
 Author: D
 Section: Tweaks
 Depends: mobilesubstrate, preferenceloader
-Pre-Depends: rootless-compat (>= 0.9)
