@@ -185,6 +185,7 @@ static void SPPrefsWrite(NSString *key, id value) {
 @property (nonatomic, strong) UILabel *valueLabel;
 @property (nonatomic, strong) UIImageView *chevron;
 @property (nonatomic, copy) void (^onToggle)(BOOL on);
+@property (nonatomic, strong) NSLayoutConstraint *subZero;
 @end
 
 @implementation SPCell
@@ -213,6 +214,7 @@ static void SPPrefsWrite(NSString *key, id value) {
         _subLabel.textColor = [UIColor secondaryLabelColor];
         _subLabel.numberOfLines = 0;
         _subLabel.translatesAutoresizingMaskIntoConstraints = NO;
+        _subZero = [_subLabel.heightAnchor constraintEqualToConstant:0];
         [self.contentView addSubview:_subLabel];
 
         _toggle = [UISwitch new];
