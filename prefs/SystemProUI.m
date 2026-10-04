@@ -418,27 +418,54 @@ static void SPPrefsWrite(NSString *key, id value) {
 - (NSMutableArray *)spBuildSpecifiers {
     NSMutableArray *arr = [NSMutableArray array];
     for (SPSection *sec in self.model) {
-        PSSpecifier *g = [PSSpecifier groupSpecifierWithName:sec.title];
+        // group specifier：优先用工厂方法，缺失时手工构造（都对 iOS 16 安全）
+        PSSpecifier *g = nil;
+        if ([PSSpecifier respondsToSelector:@selector(groupSpecifierWithName:)]) {
+            g = [PSSpecifier groupSpecifierWithName:sec.title];
+        } else {
+            g = [[PSSpecifier alloc] init];
+            [g setName:sec.title];
+            [g setCellType:PSGroupCell];
+            [g setProperty:sec.title forKey:@"label"];
+        }
         if (sec.footer.length) [g setProperty:sec.footer forKey:@"footerText"];
         [arr addObject:g];
+
         for (SPRow *row in sec.rows) {
             PSCellType ct = PSStaticTextCell;
             if (row.kind == SPRowKindSwitch)      ct = PSSwitchCell;
             else if (row.kind == SPRowKindButton) ct = PSButtonCell;
             else if (row.kind == SPRowKindText)   ct = PSLinkCell;
-            PSSpecifier *sp = [PSSpecifier preferenceSpecifierNamed:row.title
-                                                             target:self
-                                                                set:NULL
-                                                                get:NULL
-                                                             detail:nil
-                                                               cell:ct
-                                                               edit:nil];
+
+            PSSpecifier *sp = nil;
+            if ([PSSpecifier respondsToSelector:@selector(preferenceSpecifierNamed:target:set:get:detail:cell:edit:)]) {
+                sp = [PSSpecifier preferenceSpecifierNamed:row.title
+                                                    target:self
+                                                       set:NULL
+                                                       get:NULL
+                                                    detail:nil
+                                                      cell:ct
+                                                      edit:nil];
+            } else {
+                sp = [[PSSpecifier alloc] init];
+                [sp setName:row.title];
+                [sp setCellType:ct];
+            }
             [sp setProperty:row forKey:@"spRow"];
             if (row.key) [sp setProperty:row.key forKey:@"key"];
             [arr addObject:sp];
         }
     }
     return arr;
+}
+
+// 行数据直接走我们的模型（与 specifier 数组逐一对应；不依赖 iOS 16 上未验证的选择器）
+- (SPRow *)spRowAtIndexPath:(NSIndexPath *)indexPath {
+    [self spEnsureModel];
+    if (indexPath.section >= (NSInteger)self.model.count) return nil;
+    SPSection *sec = self.model[indexPath.section];
+    if (indexPath.row >= (NSInteger)sec.rows.count) return nil;
+    return sec.rows[indexPath.row];
 }
 
 - (UITableViewStyle)tableViewStyle {
@@ -452,16 +479,16 @@ static void SPPrefsWrite(NSString *key, id value) {
     self.view.backgroundColor = [UIColor systemGroupedBackgroundColor];
     self.prefs = SPPrefsLoad();
 
-    UITableView *tv = self.tableView;
-    if (!tv) tv = self.view;   // PSListController 把 view 重声明为 UITableView
+    // 只使用 iOS 16 上确有实现的选择器：PSListController 的 -table（SystemX 同款、实证可用）。
+    // 绝不要再碰 -tableView（iOS 16 未实现 → unrecognized selector 闪退）。
+    UITableView *tv = self.table;
+    if (!tv && [self.view isKindOfClass:[UITableView class]]) tv = (UITableView *)self.view;
     self.contentTable = tv;
-    tv.rowHeight = UITableViewAutomaticDimension;
-    tv.estimatedRowHeight = 58;
-    tv.backgroundColor = [UIColor systemGroupedBackgroundColor];
-    [tv registerClass:[SPCell class] forCellReuseIdentifier:@"cell"];
-
-    self.hero = [[SPHeroView alloc] initWithFrame:CGRectMake(0, 0, tv.bounds.size.width, 158)];
-    tv.tableHeaderView = self.hero;
+    if (tv) {
+        tv.backgroundColor = [UIColor systemGroupedBackgroundColor];
+        self.hero = [[SPHeroView alloc] initWithFrame:CGRectMake(0, 0, tv.bounds.size.width, 158)];
+        tv.tableHeaderView = self.hero;
+    }
 }
 
 // 自定义读值/写值：直接读写我们的 plist + Darwin 通知（绕开 cfprefsd 缓存）
@@ -610,12 +637,14 @@ static void SPPrefsWrite(NSString *key, id value) {
 #pragma mark - 表格数据源 / 交互（分节与行序由框架 specifier 模型负责）
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
-    PSSpecifier *spec = [self specifierAtIndexPath:indexPath];
-    SPRow *row = [spec propertyForKey:@"spRow"];
-    if (![row isKindOfClass:[SPRow class]]) {
+    SPRow *row = [self spRowAtIndexPath:indexPath];
+    if (!row) {
         return [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
     }
-    SPCell *cell = [tableView dequeueReusableCellWithIdentifier:@"cell" forIndexPath:indexPath];
+    SPCell *cell = [tableView dequeueReusableCellWithIdentifier:@"cell"];
+    if (!cell) {
+        cell = [[SPCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"cell"];
+    }
     id value = (row.kind == SPRowKindInfo) ? row.defValue : self.prefs[row.key];
     [cell configureWithRow:row value:value];
     __weak typeof(self) weakSelf = self;
@@ -631,9 +660,8 @@ static void SPPrefsWrite(NSString *key, id value) {
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
-    PSSpecifier *spec = [self specifierAtIndexPath:indexPath];
-    SPRow *row = [spec propertyForKey:@"spRow"];
-    if (![row isKindOfClass:[SPRow class]]) return;
+    SPRow *row = [self spRowAtIndexPath:indexPath];
+    if (!row) return;
     if (row.kind == SPRowKindSwitch) {
         SPCell *cell = (SPCell *)[tableView cellForRowAtIndexPath:indexPath];
         BOOL on = !cell.toggle.isOn;
