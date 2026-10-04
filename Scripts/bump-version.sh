@@ -22,8 +22,8 @@ edit() { # edit <file> <sed-script>
 # 1) control
 edit control "s/^Version: .*/Version: $new/"
 
-# 2) prefs/Info.plist（两个版本 string）
-edit prefs/Info.plist "s#<string>[0-9][0-9.]*-[0-9][0-9]*</string>#<string>$new</string>#g"
+# 2) prefs/Resources/Info.plist（两个版本 string）
+edit prefs/Resources/Info.plist "s#<string>[0-9][0-9.]*-[0-9][0-9]*</string>#<string>$new</string>#g"
 
 # 3) prefs/Version.h
 edit prefs/Version.h "s/#define SP_VERSION @\".*\"/#define SP_VERSION @\"$new\"/"
@@ -34,5 +34,5 @@ edit README.md "s/当前版本 \*\*[0-9][0-9.]*-[0-9][0-9]*\*\*/当前版本 **$
 echo "已同步到 $new："
 echo "  control          -> $(grep '^Version:' control)"
 echo "  prefs/Version.h  -> $(grep SP_VERSION prefs/Version.h)"
-grep -c "<string>$new</string>" prefs/Info.plist | sed 's/^/  Info.plist 命中条数: /'
+grep -c "<string>$new</string>" prefs/Resources/Info.plist | sed 's/^/  Info.plist 命中条数: /'
 echo "完成。发版：git tag v$new && git push origin --tags （Actions 自动出 Release + deb）"

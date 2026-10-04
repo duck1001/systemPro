@@ -386,13 +386,16 @@ static void SPPrefsWrite(NSString *key, id value) {
 @end
 
 #pragma mark - 主控制器
-// PS 框架的控制器基类（Preferences.framework 在宿主进程里已加载；这里只做前向声明，
-// 运行时由系统提供实现 —— controllerForSpecifier: 会调用它的 setSpecifier:/setRootController:）
-@interface PSViewController : UIViewController
+// Preferences.framework 的控制器基类（宿主进程里已加载；只做前向声明，运行时由系统提供实现）。
+// SystemX 的同款面板同样挂在 PSListController 上 —— 这是 PreferenceLoader 的规范姿势：
+// controllerForSpecifier: 会向子控制器发送 setSpecifier:/setRootController: 等消息。
+@interface PSListController : UIViewController
+- (UITableView *)table;
+- (void)reloadSpecifiers;
 @end
 
-@interface SystemProRootController : PSViewController <UITableViewDataSource, UITableViewDelegate>
-@property (nonatomic, strong) UITableView *table;
+@interface SystemProRootController : PSListController <UITableViewDataSource, UITableViewDelegate>
+@property (nonatomic, strong) UITableView *contentTable;
 @property (nonatomic, strong) NSMutableArray<SPSection *> *model;
 @property (nonatomic, strong) NSMutableDictionary *prefs;
 @property (nonatomic, strong) SPHeroView *hero;
@@ -400,37 +403,56 @@ static void SPPrefsWrite(NSString *key, id value) {
 
 @implementation SystemProRootController
 
+// 屏蔽 PS 的 specifier 机制：表格数据全部由自绘模型驱动
+- (NSArray *)specifiers { return @[]; }
+- (void)reloadSpecifiers { }
+- (void)reloadSpecifiersAnimated:(BOOL)animated { }
+
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.title = @"systemPro";
     self.view.backgroundColor = [UIColor systemGroupedBackgroundColor];
 
-    self.table = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStyleInsetGrouped];
-    self.table.translatesAutoresizingMaskIntoConstraints = NO;
-    self.table.dataSource = self;
-    self.table.delegate = self;
-    self.table.rowHeight = UITableViewAutomaticDimension;
-    self.table.estimatedRowHeight = 58;
-    self.table.backgroundColor = [UIColor systemGroupedBackgroundColor];
-    [self.table registerClass:[SPCell class] forCellReuseIdentifier:@"cell"];
-    [self.view addSubview:self.table];
-    [NSLayoutConstraint activateConstraints:@[
-        [self.table.topAnchor constraintEqualToAnchor:self.view.topAnchor],
-        [self.table.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
-        [self.table.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
-        [self.table.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
-    ]];
+    // 优先复用 PSListController 自带的表格；取不到再自建（防御式回退）
+    UITableView *tv = nil;
+    @try { tv = [super table]; } @catch (NSException *e) { tv = nil; }
+    if (!tv) {
+        tv = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStyleInsetGrouped];
+        tv.translatesAutoresizingMaskIntoConstraints = NO;
+        [self.view addSubview:tv];
+        [NSLayoutConstraint activateConstraints:@[
+            [tv.topAnchor constraintEqualToAnchor:self.view.topAnchor],
+            [tv.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
+            [tv.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
+            [tv.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
+        ]];
+    }
+    self.contentTable = tv;
+    tv.dataSource = self;
+    tv.delegate = self;
+    tv.rowHeight = UITableViewAutomaticDimension;
+    tv.estimatedRowHeight = 58;
+    tv.backgroundColor = [UIColor systemGroupedBackgroundColor];
+    [tv registerClass:[SPCell class] forCellReuseIdentifier:@"cell"];
 
     self.hero = [[SPHeroView alloc] initWithFrame:CGRectMake(0, 0, self.view.bounds.size.width, 158)];
-    self.table.tableHeaderView = self.hero;
+    tv.tableHeaderView = self.hero;
 
     [self buildModel];
+}
+
+// 自绘行高交给 Auto Layout
+- (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
+    return UITableViewAutomaticDimension;
+}
+- (CGFloat)tableView:(UITableView *)tableView estimatedHeightForRowAtIndexPath:(NSIndexPath *)indexPath {
+    return 58;
 }
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
     self.prefs = SPPrefsLoad();
-    [self.table reloadData];
+    [self.contentTable reloadData];
     [self updateHeroCount];
 }
 
@@ -614,7 +636,7 @@ static void SPPrefsWrite(NSString *key, id value) {
     [h impactOccurred];
 
     if (row.needsRespring) [self showToast:@"已保存 · 该项需注销后生效"];
-    [self.table reloadData];
+    [self.contentTable reloadData];
     [self updateHeroCount];
 }
 
@@ -713,7 +735,7 @@ static void SPPrefsWrite(NSString *key, id value) {
         [[NSFileManager defaultManager] removeItemAtPath:SP_PREFS_PATH error:nil];
         notify_post(SP_NOTIFY_RELOAD);
         self.prefs = SPPrefsLoad();
-        [self.table reloadData];
+        [self.contentTable reloadData];
         [self updateHeroCount];
         [self showToast:@"已恢复默认 · 建议注销"];
     }]];
