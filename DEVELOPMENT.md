@@ -87,8 +87,15 @@ git tag v0.0.2-2 && git push origin --tags   # 触发 Release（rootless + rooth
     ```sh
     o=$(grep -o '{' prefs/SystemProUI.m | wc -l); c=$(grep -o '}' prefs/SystemProUI.m | wc -l); echo "{ $o } $c"
     grep -c '%hook' Features_*.x; grep -c '%end' Features_*.x
-    grep -n 'self\.tableView\|specifierAtIndexPath\|registerClass' prefs/SystemProUI.m   # 应为空
+    grep -n 'self\.tableView\|specifierAtIndexPath\|registerClass' prefs/SystemProUI.md   # 应为空
     ```
+14. **私有方法签名铁律（安全模式实锤）**：任何 `%hook` 的私有方法，参数类型必须与真机一致
+    （去反汇编/repo 找真签名）。非对象参数（`id *` / `const char *` / 指针 / 整数）
+    **绝不能声明成 `id`**：ARC 会在 `@try` 等场景为本该"保活"的对象参数插入 `objc_retain`，
+    对非对象指针直接 SIGSEGV（SpringBoard 进安全模式）。
+    实例：`_UIStatusBarDataQuietModeEntry initFromData:(id *)type:(int)focusName:(const char *)
+    maxFocusLength:(int)imageName:(const char *)maxImageLength:(int)boolValue:(BOOL)`。
+    选择器拼写/大小写也要对齐（`boolValue:` vs `BOOLValue:` 视系统版本，以 SystemX 二进制字符串为准）。
 
 ## 4. 加新功能标准流程（照 hooks_final.tsv 施工）
 

@@ -199,14 +199,15 @@ void SPStatusBarFeaturesInit(void) {
 }
 %end
 
-// 借"专注/静音"数据项上屏：静音时往 focusName 打标记，系统即显示 quiet-mode 图标
-// （选择器实证自 SystemX：initFromData:type:focusName:maxFocusLength:imageName:maxImageLength:boolValue:）
+// 借"专注/静音"数据项上屏：静音时给条目挂 focusName 标记，系统即显示 quiet-mode 图标。
+// ⚠️ 签名必须与真机完全一致（focusName/imageName 是 C 字符串、data 是原始指针）：
+// 用 id 声明会被 ARC 插 objc_retain → 对非对象指针段错误（曾导致 SpringBoard 安全模式）。
 %hook _UIStatusBarDataQuietModeEntry
-- (id)initFromData:(id)data type:(long)type focusName:(id)focusName
-    maxFocusLength:(long)mfl imageName:(id)imageName maxImageLength:(long)mil boolValue:(BOOL)bv {
+- (id)initFromData:(id *)data type:(int)type focusName:(const char *)focusName
+    maxFocusLength:(int)mfl imageName:(const char *)imageName maxImageLength:(int)mil boolValue:(BOOL)bv {
     id inst = %orig(data, type, focusName, mfl, imageName, mil, bv);
-    if (SPIsSpringBoard && SPBool(kSilentStatusBarIcon) && SPRingerMuted()) {
-        @try { [inst setValue:@"!Mute" forKey:@"focusName"]; } @catch (NSException *e) {}
+    if (inst && SPIsSpringBoard && SPBool(kSilentStatusBarIcon) && SPRingerMuted()) {
+        @try { [inst setFocusName:@"!Mute"]; } @catch (NSException *e) {}
     }
     return inst;
 }

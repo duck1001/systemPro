@@ -698,9 +698,14 @@ static void SPPrefsWrite(NSString *key, id value) {
 
     NSArray *all = @[sb, dt, fd, dis, ph];
     if (self.pageIndex >= 0) {
-        // 子页：只装对应的一个分组
+        // 子页：只装对应的一个分组；导航栏已是页名，去掉重复的分组标题
         NSInteger idx = MIN(MAX(self.pageIndex, 0), (NSInteger)all.count - 1);
-        self.model = [NSMutableArray arrayWithObject:all[idx]];
+        SPSection *one = all[idx];
+        SPSection *copy = [SPSection new];
+        copy.title = @"";
+        copy.footer = one.footer;
+        copy.rows = one.rows;
+        self.model = [NSMutableArray arrayWithObject:copy];
         return;
     }
 
