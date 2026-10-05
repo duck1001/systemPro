@@ -22,6 +22,9 @@
 #define SP_ENABLE_INTEGRITY_CHECK 0
 #endif
 
+// ---------- 日志 ----------
+#define SPLog(fmt, ...) NSLog(@"[systemPro] " fmt, ##__VA_ARGS__)
+
 // ---------- 越狱根路径解析（rootless / roothide 双兼容）----------
 // roothide 把越狱根挂在隐藏目录 `.jbroot-*` 下，真实 /var 与面板可见路径不同；
 // 插件与面板必须解析到同一份 plist，否则「开关存住了但功能不生效」。
@@ -67,8 +70,6 @@ static NSString *SPPreferencesPath(void) {
     return [@"/" stringByAppendingPathComponent:rel];
 }
 
-// ---------- 日志 ----------
-#define SPLog(fmt, ...) NSLog(@"[systemPro] " fmt, ##__VA_ARGS__)
 
 // ---------- 进程判定 ----------
 // ⚠️ 不能用 [[NSBundle mainBundle] bundleIdentifier]：roothide/部分越狱下
