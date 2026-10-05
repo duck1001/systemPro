@@ -125,6 +125,15 @@
 - (id)applyUpdate:(id)update toDisplayItem:(id)displayItem;
 @end
 
+// DisplayItem：上下偏移在 _updateComputedTransform 里叠（防跳；SystemX 同款）
+@interface STUIStatusBarDisplayItem : NSObject
+- (void)_updateComputedTransform;
+@end
+
+@interface _UIStatusBarDisplayItem : NSObject
+- (void)_updateComputedTransform;
+@end
+
 @interface STUIStatusBarCellularNetworkTypeView : UIView
 - (void)setText:(NSString *)text prefixLength:(long)prefixLength
     withStyleAttributes:(id)attributes forType:(long)type animated:(BOOL)animated;

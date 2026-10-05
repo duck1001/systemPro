@@ -5,6 +5,7 @@
 #import <QuartzCore/QuartzCore.h>
 #import <Foundation/Foundation.h>
 #import <spawn.h>
+#import <math.h>
 #import "Common.h"    // 开关键名单一来源（-I.. 引入）
 #import "Version.h"
 // Preferences.framework 私有头（vendored 自 theos/headers，签名与真机对齐）
