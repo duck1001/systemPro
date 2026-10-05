@@ -8,6 +8,8 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
+#import <unistd.h>
+#import <stdlib.h>
 
 // ---------- 基本信息 ----------
 #define SP_DOMAIN        @"com.sytem.pro"
@@ -20,10 +22,79 @@
 #define SP_ENABLE_INTEGRITY_CHECK 0
 #endif
 
+// ---------- 越狱根路径解析（rootless / roothide 双兼容）----------
+// roothide 把越狱根挂在隐藏目录 `.jbroot-*` 下，真实 /var 与面板可见路径不同；
+// 插件与面板必须解析到同一份 plist，否则「开关存住了但功能不生效」。
+// 解析顺序：环境变量 JBROOT（roothide 运行时提供）→ 扫描 /.jbroot-* → 老式绝对路径。
+static NSString *SPJailbreakRoot(void) {
+    static NSString *cached = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSMutableArray<NSString *> *candidates = [NSMutableArray array];
+        const char *env = getenv("JBROOT");
+        if (env && strlen(env)) [candidates addObject:[NSString stringWithUTF8String:env]];
+
+        NSFileManager *fm = [NSFileManager defaultManager];
+        for (NSString *base in @[@"/", @"/var/containers/Bundle/Application"]) {
+            NSArray *subs = [fm contentsOfDirectoryAtPath:base error:nil];
+            for (NSString *s in subs) {
+                if ([s hasPrefix:@".jbroot-"]) {
+                    [candidates addObject:[base stringByAppendingPathComponent:s]];
+                }
+            }
+        }
+        for (NSString *c in candidates) {
+            if ([fm fileExistsAtPath:[c stringByAppendingPathComponent:@"usr/bin"]]) {
+                cached = c;
+                break;
+            }
+        }
+        SPLog(@"jbroot resolved: %@", cached ?: @"(none/rootless)");
+    });
+    return cached;
+}
+
+// 解析首选项 plist 的真实路径：优先 roothide jbroot 镜像，回退标准路径
+static NSString *SPPreferencesPath(void) {
+    NSString *rel = @"var/mobile/Library/Preferences/com.sytem.pro.plist";
+    NSString *root = SPJailbreakRoot();
+    if (root.length) {
+        NSString *p = [root stringByAppendingPathComponent:rel];
+        if ([[NSFileManager defaultManager] fileExistsAtPath:p]) return p;
+        // 即使不存在也先用 jbroot 镜像路径（首次写入就落这里）
+        return p;
+    }
+    return [@"/" stringByAppendingPathComponent:rel];
+}
+
 // ---------- 日志 ----------
 #define SPLog(fmt, ...) NSLog(@"[systemPro] " fmt, ##__VA_ARGS__)
 
 // ---------- 进程判定 ----------
+// ⚠️ 不能用 [[NSBundle mainBundle] bundleIdentifier]：roothide/部分越狱下
+// SpringBoard 的 mainBundle 为空或异常 → 所有 SPIsXxx 为 false → 全部门禁不放行（功能全组死）。
+// 正确姿势：进程可执行路径 + 进程名（argv[0] / 可执行路径尾部），不依赖 bundle。
+static NSString *SPProcessName(void) {
+    static NSString *cached = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSString *p = [[NSProcessInfo processInfo] processName];
+        if (!p.length) {
+            NSString *exec = [[NSProcessInfo processInfo] arguments].firstObject;
+            p = exec.lastPathComponent;
+        }
+        cached = p ?: @"";
+    });
+    return cached;
+}
+
+static BOOL SPProcessIs(NSString *name) {
+    NSString *p = SPProcessName();
+    if (p.length && [p isEqualToString:name]) return YES;
+    // 兜底：再用 bundleId 判一次（两条都中任一即可）
+    NSString *bid = [[NSBundle mainBundle] bundleIdentifier];
+    return bid.length > 0 && [bid isEqualToString:name];
+}
 extern BOOL SPIsSpringBoard;
 extern BOOL SPIsPreferences;
 extern BOOL SPIsPhotos;

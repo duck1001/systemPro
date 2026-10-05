@@ -151,7 +151,9 @@
 // 真签名（实证自 iOS 反汇编）：focusName/imageName 是 C 字符串，data 是原始指针，
 // 绝不能用 id 声明（ARC 会插 objc_retain，对非对象指针 = 段错误，SpringBoard 安全模式）
 @interface _UIStatusBarDataQuietModeEntry : NSObject
-- (void)setFocusName:(id)name;
+// ⚠️ focusName/imageName 是真·C 字符串（const char *），data 是原始指针。
+// 用 id 声明 → ARC 插 objc_retain → 对非对象指针段错误（安全模式）；传 NSString 也是错的（同一铁律）。
+- (void)setFocusName:(const char *)name;
 - (id)initFromData:(id *)data type:(int)type focusName:(const char *)focusName
     maxFocusLength:(int)mfl imageName:(const char *)imageName maxImageLength:(int)mil boolValue:(BOOL)bv;
 @end

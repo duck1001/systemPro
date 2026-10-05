@@ -25,7 +25,7 @@ static void SPPrefsChangedCallback(CFNotificationCenterRef center, void *observe
 }
 
 - (void)load {
-    NSDictionary *d = [NSDictionary dictionaryWithContentsOfFile:SP_PREFS_PATH];
+    NSDictionary *d = [NSDictionary dictionaryWithContentsOfFile:SPPreferencesPath()];
     if (![d isKindOfClass:[NSDictionary class]]) d = @{};
     @synchronized (self) {
         _cache = d;
@@ -48,7 +48,14 @@ static void SPPrefsChangedCallback(CFNotificationCenterRef center, void *observe
         id v = _cache[key];
         if (v) return v;
     }
-    // 回退：CFPreferences（mobile 作用域）
+    // 回退 1：重读一次盘（面板刚写完、缓存未更新时）
+    NSDictionary *fresh = [NSDictionary dictionaryWithContentsOfFile:SPPreferencesPath()];
+    if ([fresh isKindOfClass:[NSDictionary class]]) {
+        @synchronized (self) { _cache = fresh; }
+        id v2 = fresh[key];
+        if (v2) return v2;
+    }
+    // 回退 2：CFPreferences（部分环境有效；roothide 下可能为空，故放在最后）
     CFPropertyListRef p = CFPreferencesCopyAppValue((__bridge CFStringRef)key,
                                                     CFSTR("com.sytem.pro"));
     return (__bridge_transfer id)p;

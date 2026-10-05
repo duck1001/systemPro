@@ -63,14 +63,22 @@ typedef NS_ENUM(NSInteger, SPRowKind) {
 
 #pragma mark - 轻量偏好读写（直读直写 plist + Darwin 通知，和插件侧同一套协议）
 static NSMutableDictionary *SPPrefsLoad(void) {
-    NSDictionary *d = [NSDictionary dictionaryWithContentsOfFile:SP_PREFS_PATH];
+    NSDictionary *d = [NSDictionary dictionaryWithContentsOfFile:SPPreferencesPath()];
     return d ? [d mutableCopy] : [NSMutableDictionary dictionary];
 }
 static void SPPrefsWrite(NSString *key, id value) {
-    NSMutableDictionary *d = SPPrefsLoad();
+    // 路径解析与插件侧同一套（roothide jbroot 镜像 / 标准路径），保证两端指向同一份 plist
+    NSString *path = SPPreferencesPath();
+    NSString *dir = [path stringByDeletingLastPathComponent];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    if (![fm fileExistsAtPath:dir]) {
+        [fm createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
+    }
+    NSMutableDictionary *d = [NSMutableDictionary dictionaryWithContentsOfFile:path] ?: [NSMutableDictionary dictionary];
     if (value == nil) [d removeObjectForKey:key];
     else d[key] = value;
-    [d writeToFile:SP_PREFS_PATH atomically:YES];
+    BOOL ok = [d writeToFile:path atomically:YES];
+    if (!ok) SPLog(@"prefs write FAILED: %@", path);
     notify_post(SP_NOTIFY_RELOAD);
 }
 
@@ -579,7 +587,7 @@ static void SPPrefsWrite(NSString *key, id value) {
 - (id)readPreferenceValue:(PSSpecifier *)specifier {
     NSString *key = [specifier propertyForKey:@"key"];
     if (!key.length) return nil;
-    NSDictionary *d = [NSDictionary dictionaryWithContentsOfFile:SP_PREFS_PATH];
+    NSDictionary *d = [NSDictionary dictionaryWithContentsOfFile:SPPreferencesPath()];
     return d[key];
 }
 
@@ -918,7 +926,7 @@ static void SPPrefsWrite(NSString *key, id value) {
     [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
     [a addAction:[UIAlertAction actionWithTitle:@"清空" style:UIAlertActionStyleDestructive
                                         handler:^(UIAlertAction *x) {
-        [[NSFileManager defaultManager] removeItemAtPath:SP_PREFS_PATH error:nil];
+        [[NSFileManager defaultManager] removeItemAtPath:SPPreferencesPath() error:nil];
         notify_post(SP_NOTIFY_RELOAD);
         self.prefs = SPPrefsLoad();
         [self.contentTable reloadData];

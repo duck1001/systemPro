@@ -111,19 +111,28 @@ static BOOL SPIntegrityCheckPasses(void) {
 %ctor {
     @autoreleasepool {
         NSString *bid = [[NSBundle mainBundle] bundleIdentifier];
-        SPIsSpringBoard = [bid isEqualToString:@"com.apple.springboard"];
-        SPIsPreferences = [bid isEqualToString:@"com.apple.Preferences"];
-        SPIsPhotos      = [bid isEqualToString:@"com.apple.mobileslideshow"];
-        SPIsPhone       = [bid isEqualToString:@"com.apple.mobilephone"];
-        SPIsMessages    = [bid isEqualToString:@"com.apple.MobileSMS"];
-        SPLog(@"ctor: %@ (sb=%d prefs=%d photos=%d)", bid,
-              SPIsSpringBoard, SPIsPreferences, SPIsPhotos);
+        NSString *pn = SPProcessName();
+        // 进程判定双通道：可执行名（roothide/越狱环境可靠）或 bundleId
+        SPIsSpringBoard = SPProcessIs(@"SpringBoard");
+        SPIsPreferences = SPProcessIs(@"Preferences");
+        SPIsPhotos      = SPProcessIs(@"MobileSlideShow");
+        SPIsPhone       = SPProcessIs(@"MobilePhone");
+        SPIsMessages    = SPProcessIs(@"MobileSMS");
+        SPLog(@"ctor: exec=%@ bid=%@ (sb=%d prefs=%d photos=%d phone=%d msg=%d)",
+              pn, bid, SPIsSpringBoard, SPIsPreferences, SPIsPhotos, SPIsPhone, SPIsMessages);
 
 #if SP_ENABLE_INTEGRITY_CHECK
         SPGatePassed = SPIntegrityCheckPasses();
         if (!SPGatePassed) { SPLog(@"gate failed, tweak inert"); return; }
 #endif
         (void)[SPPrefs shared];        // 懒加载 + 挂 Darwin 通知
-        SPStatusBarFeaturesInit();     // 状态栏模块的一次性初始化（响铃同步等）
+        SPStatusBarFeaturesInit();     // 状态栏模块的一次性初始化
+
+        // 诊断：把解析结果和当前开关状态打到日志（syslog / Console 可查）
+        SPLog(@"jbroot=%@ prefsPath=%@", SPJailbreakRoot() ?: @"(none)", SPPreferencesPath());
+        SPLog(@"keys: dateTime=%d silent=%d fiveDock=%d vpn=%d wifiBT=%d faceid=%d photoSound=%d",
+              SPBool(kStatusBarDateTime), SPBool(kSilentStatusBarIcon), SPBool(kFiveIconDock),
+              SPBool(kVPNTint), SPBool(kDisconnectWiFiBT), SPBool(kAutoDismissFaceID),
+              SPBool(kPhotosDefaultSound));
     }
 }

@@ -262,7 +262,10 @@ void SPStatusBarFeaturesInit(void) {
     maxFocusLength:(int)mfl imageName:(const char *)imageName maxImageLength:(int)mil boolValue:(BOOL)bv {
     id inst = %orig(data, type, focusName, mfl, imageName, mil, bv);
     if (inst && SPIsSpringBoard && SPBool(kSilentStatusBarIcon) && SPRingerMuted()) {
-        @try { [inst setFocusName:@"!Mute"]; } @catch (NSException *e) {}
+        @try {
+            // 真签名是 C 字符串（const char *）——必须传 C 串，传 NSString 会被当指针踩（曾致安全模式/图标不显示）
+            [inst setFocusName:"!Mute"];
+        } @catch (NSException *e) {}
     }
     return inst;
 }

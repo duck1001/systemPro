@@ -57,14 +57,33 @@ static BOOL SPVPNColorGate(void) {
     return SPIsSpringBoard && SPBool(kVPNTint) && SPVPNActive();
 }
 
-// 字符串视图：只有显示 "VPN" 的那个才上色（其余状态栏文字不动）
-static void SPVPNTintStringView(id view) {
-    if (!SPVPNColorGate()) return;
-    NSString *t = nil;
-    @try { t = [(id)view text]; } @catch (NSException *e) {}
-    if ([t isKindOfClass:[NSString class]] && [t containsString:@"VPN"]) {
-        @try { [(id)view setTextColor:SPVPNColor()]; } @catch (NSException *e) {}
+// 状态栏文字视图：把整串的 NSAttributedString 重写成我们指定的颜色。
+// SystemX 的真做法就是「在 setText:/applyStyleAttributes: 里构造带色属性串替换样式」，
+// 光事后 setTextColor 会被系统随后重设样式冲掉（这就是之前"完全没上色"的原因）。
+static NSAttributedString *SPVPNColorizedAttributed(NSAttributedString *src, UIColor *color) {
+    if (![src isKindOfClass:[NSAttributedString class]]) return nil;
+    NSMutableAttributedString *m = [src mutableCopy];
+    if (!m) return nil;
+    [m addAttribute:NSForegroundColorAttributeName value:color
+              range:NSMakeRange(0, m.length)];
+    return m;
+}
+
+// 只对显示 "VPN" 的串上色（其余状态栏文字一律不动）
+static NSMutableAttributedString *SPVPNMaybeColorize(NSAttributedString *attr, NSString *plain) {
+    if (!SPIsSpringBoard || !SPBool(kVPNTint) || !SPVPNActive()) return nil;
+    NSString *text = plain;
+    if (![text isKindOfClass:[NSString class]] && [attr isKindOfClass:[NSAttributedString class]]) {
+        text = attr.string;
     }
+    if (![text isKindOfClass:[NSString class]] || ![text containsString:@"VPN"]) return nil;
+
+    UIColor *c = SPVPNColor();
+    if ([attr isKindOfClass:[NSAttributedString class]] && attr.length > 0) {
+        return (NSMutableAttributedString *)SPVPNColorizedAttributed(attr, c);
+    }
+    return [[NSMutableAttributedString alloc] initWithString:text
+                                                  attributes:@{ NSForegroundColorAttributeName: c }];
 }
 
 #pragma mark - 钩子
@@ -91,7 +110,7 @@ static void SPVPNTintStringView(id view) {
 }
 %end
 
-// 蜂窝网络类型文字（5G/4G 那行）
+// 蜂窝网络类型（5G/4G 那行）：走属性串通道 + 事后补色
 %hook STUIStatusBarCellularNetworkTypeView
 - (void)applyStyleAttributes:(id)attributes {
     %orig;
@@ -106,25 +125,39 @@ static void SPVPNTintStringView(id view) {
 }
 %end
 
-// VPN 文字（"VPN" 胶囊）
+// 状态栏文字（VPN 胶囊就在这层）：拦截带色属性串 + setText
 %hook STUIStatusBarStringView
 - (void)setText:(id)text {
-    %orig;
-    SPVPNTintStringView(self);
+    id out = text;
+    NSAttributedString *colored = SPVPNMaybeColorize(nil, text);
+    if (colored) out = colored;
+    %orig(out);
 }
 - (void)applyStyleAttributes:(id)attributes {
     %orig;
-    SPVPNTintStringView(self);
+    if (!SPVPNColorGate()) return;
+    NSString *t = nil;
+    @try { t = [(id)self text]; } @catch (NSException *e) {}
+    if ([t isKindOfClass:[NSString class]] && [t containsString:@"VPN"]) {
+        @try { [(id)self setTextColor:SPVPNColor()]; } @catch (NSException *e) {}
+    }
 }
 %end
 
 %hook _UIStatusBarStringView
 - (void)setText:(id)text {
-    %orig;
-    SPVPNTintStringView(self);
+    id out = text;
+    NSAttributedString *colored = SPVPNMaybeColorize(nil, text);
+    if (colored) out = colored;
+    %orig(out);
 }
 - (void)applyStyleAttributes:(id)attributes {
     %orig;
-    SPVPNTintStringView(self);
+    if (!SPVPNColorGate()) return;
+    NSString *t = nil;
+    @try { t = [(id)self text]; } @catch (NSException *e) {}
+    if ([t isKindOfClass:[NSString class]] && [t containsString:@"VPN"]) {
+        @try { [(id)self setTextColor:SPVPNColor()]; } @catch (NSException *e) {}
+    }
 }
 %end
