@@ -72,12 +72,14 @@ static void SPVPNTintStringView(id view) {
 // WiFi 信号条（STUI 老样式）
 %hook STUIStatusBarWifiSignalView
 - (void)setActiveColor:(id)color {
-    if (SPVPNColorGate()) { UIColor *spc = SPVPNColor(); %orig(spc); return; }
-    %orig;
+    UIColor *spc = color;
+    if (SPVPNColorGate()) spc = SPVPNColor();
+    %orig(spc);
 }
 - (void)setInactiveColor:(id)color {
-    if (SPVPNColorGate()) { UIColor *spc = SPVPNColor(); %orig(spc); return; }
-    %orig;
+    UIColor *spc = color;
+    if (SPVPNColorGate()) spc = SPVPNColor();
+    %orig(spc);
 }
 %end
 
