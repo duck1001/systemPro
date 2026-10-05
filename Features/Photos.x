@@ -58,7 +58,8 @@ static const void *kSPMuteHandled = &kSPMuteHandled;
     if (muted && SPIsPhotos && SPBool(kPhotosDefaultSound)) {
         if (!objc_getAssociatedObject(self, kSPMuteHandled)) {
             objc_setAssociatedObject(self, kSPMuteHandled, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-            %orig(NO);
+            BOOL softNo = NO;
+            %orig(softNo);
             return;
         }
     }

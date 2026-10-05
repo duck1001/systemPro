@@ -171,6 +171,16 @@
 - (void)layoutSubviews;
 @end
 
+// ---------- 网络 / 蓝牙（WF + SB 私有类） ----------
+@interface BluetoothManager : NSObject
+- (void)bluetoothStateActionWithCompletion:(id)completion;
+@end
+
+@interface WFControlCenterStateMonitor : NSObject
+- (void)performAction:(id)action;
+- (BOOL)_airplaneModeEnabled;
+@end
+
 // ---------- 相册 ----------
 @interface PUDeletePhotosActionController : NSObject
 - (BOOL)shouldSkipDeleteConfirmation;

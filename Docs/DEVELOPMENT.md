@@ -10,7 +10,7 @@
 | 插件名 | systemPro |
 | 标识符 | com.sytem.pro（按操作方指定，勿"纠正"） |
 | 作者 | D |
-| 版本规则 | 首次 0.0.1-1；小改尾号 +1（0.0.2-2…）；功能轮 0.0.N-1 |
+| 版本规则 | **每次更新（无论大小）尾号 +1**：0.0.2-5 → 0.0.2-6 → 0.0.2-7 …（2026-10-05 操作方定稿） |
 | 优先级 | **roothide 优先**，rootless 兼顾 |
 | 仓库 | github.com/duck1001/systemPro（私有） |
 | CI | GitHub Actions（macos-14）：push 出 Artifacts；tag `v*` 自动 Release 附双 deb |
@@ -136,7 +136,7 @@ git tag v0.0.2-2 && git push origin --tags   # 触发 Release（rootless + rooth
 功能/挂钩点来源：`sysbox_re_full.tar.gz`（hooks_final.tsv / cfstrings.txt / 三份域报告）。
 新增功能时在报告里找"实现要点"段落，按第 4 节流程落地。
 
-## 8. v0.0.3 功能轮 — 新钩子与教训
+## 8. 0.0.2-6 功能轮 — 新钩子与教训
 
 **新功能来源（SystemX 键名对照）**：`colorizeVPNStatusBar` / `disconnectWiFiBT` /
 `autoDismissFaceID` 均为 SystemX 原功能，实现自研；`photosDefaultSound` 为自研新项。
