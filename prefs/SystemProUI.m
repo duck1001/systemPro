@@ -22,6 +22,7 @@ typedef NS_ENUM(NSInteger, SPRowKind) {
     SPRowKindText,
     SPRowKindButton,
     SPRowKindInfo,
+    SPRowKindLink,
 };
 
 @interface SPRow : NSObject
@@ -36,6 +37,7 @@ typedef NS_ENUM(NSInteger, SPRowKind) {
 @property (nonatomic) BOOL needsRespring;
 @property (nonatomic) BOOL destructive;
 @property (nonatomic, copy) NSString *actionName;
+@property (nonatomic) NSInteger pageIndex;   // SPRowKindLink: 目标子页编号
 @end
 
 @implementation SPRow
@@ -283,10 +285,11 @@ static void SPPrefsWrite(NSString *key, id value) {
     BOOL isText   = (row.kind == SPRowKindText);
     BOOL isInfo   = (row.kind == SPRowKindInfo);
     BOOL isButton = (row.kind == SPRowKindButton);
+    BOOL isLink   = (row.kind == SPRowKindLink);
 
     self.toggle.hidden = !isSwitch;
     self.valueLabel.hidden = !(isText || isInfo);
-    self.chevron.hidden = !isText;
+    self.chevron.hidden = !(isText || isLink);
     self.selectionStyle = (isSwitch || isText || isButton) ? UITableViewCellSelectionStyleDefault : UITableViewCellSelectionStyleNone;
     self.titleLabel.textColor = row.destructive ? [UIColor systemRedColor] : [UIColor labelColor];
 
@@ -397,6 +400,7 @@ static void SPPrefsWrite(NSString *key, id value) {
 // 只重写 cellForRow 自定义样式 —— 这是社区验证过的标准姿势；
 // 切记不要自己接管 numberOfSections/numberOfRows（会撞 PSListController 内部缓存，iOS 16 直接抛 NSRangeException）。
 @interface SystemProRootController : PSListController
+@property (nonatomic) NSInteger pageIndex;   // -1 = 首页；>=0 = 子页
 @property (nonatomic, strong) UITableView *contentTable;
 @property (nonatomic, strong) NSMutableArray<SPSection *> *model;
 @property (nonatomic, strong) NSMutableDictionary *prefs;
@@ -436,6 +440,7 @@ static void SPPrefsWrite(NSString *key, id value) {
             if (row.kind == SPRowKindSwitch)      ct = PSSwitchCell;
             else if (row.kind == SPRowKindButton) ct = PSButtonCell;
             else if (row.kind == SPRowKindText)   ct = PSLinkCell;
+            else if (row.kind == SPRowKindLink)   ct = PSLinkCell;
 
             PSSpecifier *sp = nil;
             if ([PSSpecifier respondsToSelector:@selector(preferenceSpecifierNamed:target:set:get:detail:cell:edit:)]) {
@@ -475,17 +480,25 @@ static void SPPrefsWrite(NSString *key, id value) {
 - (void)viewDidLoad {
     [super viewDidLoad];
     [self spEnsureModel];
-    self.title = @"systemPro";
+    self.title = (self.pageIndex < 0) ? @"systemPro" : [self spPageName:self.pageIndex];
     self.view.backgroundColor = [UIColor systemGroupedBackgroundColor];
     self.prefs = SPPrefsLoad();
+
+    // 注销按钮放左上角（保留系统返回键：leftItemsSupplementBackButton）
+    UIBarButtonItem *rb = [[UIBarButtonItem alloc] initWithTitle:@"注销"
+                                                          style:UIBarButtonItemStylePlain
+                                                         target:self
+                                                         action:@selector(confirmRespring)];
+    self.navigationItem.leftBarButtonItem = rb;
+    self.navigationItem.leftItemsSupplementBackButton = YES;
 
     // 只使用 iOS 16 上确有实现的选择器：PSListController 的 -table（SystemX 同款、实证可用）。
     // 绝不要再碰 -tableView（iOS 16 未实现 → unrecognized selector 闪退）。
     UITableView *tv = self.table;
     if (!tv && [self.view isKindOfClass:[UITableView class]]) tv = (UITableView *)self.view;
     self.contentTable = tv;
-    if (tv) {
-        tv.backgroundColor = [UIColor systemGroupedBackgroundColor];
+    if (tv) tv.backgroundColor = [UIColor systemGroupedBackgroundColor];
+    if (tv && self.pageIndex < 0) {
         self.hero = [[SPHeroView alloc] initWithFrame:CGRectMake(0, 0, tv.bounds.size.width, 158)];
         tv.tableHeaderView = self.hero;
     }
@@ -536,6 +549,16 @@ static void SPPrefsWrite(NSString *key, id value) {
     SPRow *r = [SPRow kind:SPRowKindText key:key title:t subtitle:nil icon:icon tint:[UIColor systemGrayColor]];
     r.defValue = def; r.numeric = num;
     return r;
+}
+- (SPRow *)lk:(NSString *)t sub:(NSString *)sub icon:(NSString *)icon idx:(NSInteger)idx {
+    SPRow *r = [SPRow kind:SPRowKindLink key:nil title:t subtitle:sub icon:icon
+                      tint:[UIColor colorWithRed:0.36 green:0.34 blue:0.92 alpha:1]];
+    r.pageIndex = idx;
+    return r;
+}
+- (NSString *)spPageName:(NSInteger)idx {
+    NSArray *names = @[@"状态栏", @"桌面与 Dock", @"文件夹", @"禁用与隐藏", @"相册"];
+    return (idx >= 0 && idx < (NSInteger)names.count) ? names[idx] : @"systemPro";
 }
 
 - (void)buildModel {
@@ -607,17 +630,14 @@ static void SPPrefsWrite(NSString *key, id value) {
             [self sw:kMarkAlbumNotUserCreated title:@"隐藏「我的相簿」分组" sub:nil icon:@"rectangle.stack.badge.minus" tint:orange respring:NO],
         ]];
 
-    SPRow *respring = [SPRow kind:SPRowKindButton key:nil title:@"注销 SpringBoard"
-                          subtitle:@"让所有更改生效（有二次确认）" icon:@"arrow.clockwise" tint:indigo];
-    respring.actionName = @"respring";
     SPRow *reset = [SPRow kind:SPRowKindButton key:nil title:@"恢复默认设置"
                           subtitle:@"清空全部开关（有二次确认）" icon:@"arrow.counterclockwise" tint:red];
     reset.actionName = @"reset";
     reset.destructive = YES;
 
     SPSection *maint = [self section:@"维护"
-        footer:@"切换即时保存并通过 com.sytem.pro.prefschanged 通知插件热重载；个别布局项需注销。"
-        rows:@[respring, reset]];
+        footer:@"注销在左上角；改动即时保存并通过 com.sytem.pro.prefschanged 通知插件热重载。"
+        rows:@[reset]];
 
     SPRow *v = [SPRow kind:SPRowKindInfo key:nil title:@"版本" subtitle:nil icon:@"tag" tint:[UIColor systemGrayColor]];
     v.defValue = SP_VERSION;
@@ -631,7 +651,25 @@ static void SPPrefsWrite(NSString *key, id value) {
         footer:@"systemPro · 手搓实现的越狱功能套件。改动即时保存，误操作可在「维护」里恢复默认。"
         rows:@[v, au, idr, link]];
 
-    self.model = [@[sb, dt, fd, dis, ph, maint, about] mutableCopy];
+    NSArray *all = @[sb, dt, fd, dis, ph];
+    if (self.pageIndex >= 0) {
+        // 子页：只装对应的一个分组
+        NSInteger idx = MIN(MAX(self.pageIndex, 0), (NSInteger)all.count - 1);
+        self.model = [NSMutableArray arrayWithObject:all[idx]];
+        return;
+    }
+
+    // 首页：分页入口 + 维护 + 关于
+    SPSection *pages = [self section:@""
+        footer:@"开关按页归类，点条目进入子页；改动即时保存并热重载，左上角可注销。"
+        rows:@[
+            [self lk:@"状态栏" sub:@"日期时间 / 静音小图标 / 5GA / 伪装电量" icon:@"antenna.radiowaves.left.and.right" idx:0],
+            [self lk:@"桌面与 Dock" sub:@"Dock 五图标 / 透明 Dock / 手势锁屏 / 隐藏项" icon:@"apps.iphone" idx:1],
+            [self lk:@"文件夹" sub:@"4×4 布局" icon:@"folder.fill" idx:2],
+            [self lk:@"禁用与隐藏" sub:@"负一屏 / 资源库 / 分隔线 / 唤醒 / 注销锁屏" icon:@"eye.slash.fill" idx:3],
+            [self lk:@"相册" sub:@"删除确认 / 缩放控件 / 全选 / 相簿分组" icon:@"photo" idx:4],
+        ]];
+    self.model = [@[pages, maint, about] mutableCopy];
 }
 
 #pragma mark - 表格数据源 / 交互（分节与行序由框架 specifier 模型负责）
@@ -680,6 +718,10 @@ static void SPPrefsWrite(NSString *key, id value) {
     } else if (row.kind == SPRowKindButton) {
         if ([row.actionName isEqualToString:@"respring"]) [self confirmRespring];
         else if ([row.actionName isEqualToString:@"reset"]) [self confirmReset];
+    } else if (row.kind == SPRowKindLink) {
+        SystemProRootController *page = [[SystemProRootController alloc] init];
+        page.pageIndex = row.pageIndex;
+        [self.navigationController pushViewController:page animated:YES];
     }
 }
 
@@ -698,16 +740,22 @@ static void SPPrefsWrite(NSString *key, id value) {
 }
 
 - (void)updateHeroCount {
-    NSInteger on = 0, total = 0;
-    for (SPSection *s in self.model) {
-        for (SPRow *r in s.rows) {
-            if (r.kind == SPRowKindSwitch) {
-                total++;
-                if ([self.prefs[r.key] boolValue]) on++;
-            }
-        }
+    if (!self.hero) return; // 只在首页有 Hero 卡
+    NSArray *keys = @[
+        kStatusBarDateTime, kSilentStatusBarIcon, kForce5GAStatusBar,
+        kFiveIconDock, kTransparentDock, kDoubleTapToLock, kLongPressToLock,
+        kHideHomeBar, kHideHomePageDots, kHideHomeIconLabels, kHideWidgetLabels, kHideHomeIconLabelShadow,
+        kFolder4x4,
+        kDisableTodayView, kDisableAppLibrary, kDisableHomePullDownSearch,
+        kDisableSeparators, kDisablePhoneSeparators, kDisableMessagesSeparators,
+        kNotificationNoWake, kChargingWakeDisabled, kNoLockAfterRespring,
+        kSkipDeleteConfirmation, kHideZoomLevelControl, kAllowSelectAll, kMarkAlbumNotUserCreated,
+    ];
+    NSInteger on = 0;
+    for (NSString *k in keys) {
+        if ([self.prefs[k] boolValue]) on++;
     }
-    self.hero.countLabel.text = [NSString stringWithFormat:@"已启用 %ld / %ld 项功能", (long)on, (long)total];
+    self.hero.countLabel.text = [NSString stringWithFormat:@"已启用 %ld / %ld 项功能", (long)on, (long)keys.count];
 }
 
 - (void)showToast:(NSString *)text {
@@ -752,30 +800,49 @@ static void SPPrefsWrite(NSString *key, id value) {
     [self presentViewController:a animated:YES completion:nil];
 }
 
-- (void)spawnRespring {
-    NSArray *tools = @[
-        @[@"/var/jb/usr/bin/sbreload", @[]],
-        @[@"/usr/bin/sbreload",       @[]],
-        @[@"/var/jb/usr/bin/killall", @[@"-9", @"SpringBoard"]],
-        @[@"/usr/bin/killall",        @[@"-9", @"SpringBoard"]],
-    ];
+// 收集所有可能藏工具的 bin 目录：rootless /var/jb、老式 /usr、roothide jbroot(.jbroot-*)
+- (NSMutableArray<NSString *> *)spToolDirs {
+    NSMutableArray *dirs = [NSMutableArray array];
+    [dirs addObject:@"/var/jb/usr/bin"];
+    [dirs addObject:@"/usr/bin"];
+    [dirs addObject:@"/usr/local/bin"];
     NSFileManager *fm = [NSFileManager defaultManager];
-    for (NSArray *entry in tools) {
-        NSString *path = entry[0];
-        NSArray *args = entry[1];
-        if (![fm fileExistsAtPath:path]) continue;
-        const char *argv[4] = {0};
-        argv[0] = path.UTF8String;
-        for (NSUInteger i = 0; i < args.count && i < 3; i++) argv[i + 1] = ((NSString *)args[i]).UTF8String;
-        pid_t pid = 0;
-        int rc = posix_spawn(&pid, path.UTF8String, NULL, NULL, (char *const *)argv, environ);
-        if (rc == 0) {
-            [self showToast:@"正在注销…"];
-            return;
+    NSString *base = @"/var/containers/Bundle/Application";
+    NSArray *subs = [fm contentsOfDirectoryAtPath:base error:nil];
+    for (NSString *s in subs) {
+        if (![s hasPrefix:@".jbroot-"]) continue;
+        [dirs addObject:[base stringByAppendingPathComponent:
+                          [s stringByAppendingPathComponent:@"usr/bin"]]];
+    }
+    return dirs;
+}
+
+- (void)spawnRespring {
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSArray *dirs = [self spToolDirs];
+    NSArray *chain = @[
+        @[@"sbreload", @[]],
+        @[@"killall",  @[@"-9", @"SpringBoard"]],
+    ];
+    for (NSArray *step in chain) {
+        NSString *tool = step[0];
+        NSArray *args = step[1];
+        for (NSString *dir in dirs) {
+            NSString *path = [dir stringByAppendingPathComponent:tool];
+            if (![fm isExecutableFileAtPath:path]) continue;
+            const char *argv[4] = {0};
+            argv[0] = path.UTF8String;
+            for (NSUInteger i = 0; i < args.count && i < 3; i++) argv[i + 1] = ((NSString *)args[i]).UTF8String;
+            pid_t pid = 0;
+            int rc = posix_spawn(&pid, path.UTF8String, NULL, NULL, (char *const *)argv, environ);
+            if (rc == 0) {
+                [self showToast:@"正在注销…"];
+                return;
+            }
         }
     }
     UIAlertController *f = [UIAlertController alertControllerWithTitle:@"未能自动注销"
-        message:@"没有找到可用的 sbreload / killall。\n可手动运行 “sbreload”，或在越狱工具里选择「重启 SpringBoard」。"
+        message:@"没找到可用的 sbreload / killall。\n可手动运行 “sbreload”，或在越狱工具里选择「重启 SpringBoard」。"
         preferredStyle:UIAlertControllerStyleAlert];
     [f addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
     [self presentViewController:f animated:YES completion:nil];

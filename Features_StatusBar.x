@@ -40,7 +40,10 @@ static void SPDateTimeApply(id displayItem) {
 
     id view = nil;
     @try { view = [displayItem valueForKey:@"view"]; } @catch (NSException *e) {}
-    if (![view isKindOfClass:[UILabel class]]) return;
+    // 不绑定具体类：只要具备 label 能力就改写（STUI/_UI 两套状态栏都覆盖）
+    if (![view isKindOfClass:[UIView class]]) return;
+    if (![view respondsToSelector:@selector(setAttributedText:)] ||
+        ![view respondsToSelector:@selector(setNumberOfLines:)]) return;
     UILabel *label = (UILabel *)view;
 
     NSDate *now = [NSDate date];

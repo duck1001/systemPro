@@ -29,10 +29,17 @@
     if (g.state == UIGestureRecognizerStateBegan) SPLockDevice();
 }
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)g shouldReceiveTouch:(UITouch *)touch {
+    // 只拦"图标本体"；图标列表的背景（SBIconListView/SBRootFolderView）算空白区，必须放行，
+    // 否则手势永远收不到触摸（旧版误用 containsString:@"Icon" 把列表自己也拦了）。
     UIView *v = touch.view;
     while (v && v != g.view) {
         NSString *cn = NSStringFromClass([v class]);
-        if ([cn containsString:@"Icon"] || [cn containsString:@"Widget"] || [cn containsString:@"Badge"]) {
+        if ([cn isEqualToString:@"SBIconView"] ||
+            [cn containsString:@"Badge"] ||
+            [cn containsString:@"Widget"] ||
+            [cn containsString:@"IconImage"] ||
+            [cn containsString:@"IconLabel"] ||
+            [cn containsString:@"IconAccessory"]) {
             return NO;
         }
         v = v.superview;
