@@ -168,3 +168,9 @@ git tag v0.0.2-2 && git push origin --tags   # 触发 Release（rootless + rooth
 - **文件分类**：功能源码收进 `Features/` 平铺按域命名（StatusBar/Desktop/Disable/Photos/VPN/
   Network/Lock.x），文档进 `Docs/`。**注意**：移动后 `#import` 全部改 `../` 前缀；
   Makefile 的 `systemPro_FILES` 支持子目录路径（CI 实证）。
+- **CI 教训（0.0.2-6）**：① mainline theos 的 logos 对语句内联/表达式形式的 `%orig(...)`
+  解析严格（报 "Invalid argument structure"），roothide fork 宽松 → 统一改「局部变量 +
+  单出口 `%orig(local);`」写法；② hook 未声明类（如 BluetoothManager）在方法体内
+  `[self …]` 会报 "receiver type … for instance message is a forward declaration"
+  → 私有类必须先写进 PrivateHeaders.h；③ 同一提交两个 scheme 可能**单边**编译失败
+  （工具链/logos 版本差异），红一边也必须拉日志看，不能只看整体 status。
