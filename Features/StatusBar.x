@@ -6,9 +6,9 @@
 //   STUIStatusBarCellularNetworkTypeView setText:...      (0x1eb6c/0x1f2a8)
 //   SBUIController batteryCapacity/batteryCapacityAsPercentage (0x25a14/0x25a68)
 //   UIStatusBarBatteryPercentItemView updateForNewData:actions: (0x25824)
-#import "Common.h"
-#import "PrivateHeaders.h"
-#import "Prefs.h"
+#import "../Common.h"
+#import "../PrivateHeaders.h"
+#import "../Prefs.h"
 
 // ============================================================
 // 一、日期时间（时间下方加一行日期，双行 UILabel 方案）
@@ -100,23 +100,34 @@ static id SPSingleton(NSString *clsName) {
     return nil;
 }
 
-// 读系统当前是否静音：SBRingerControl（多选择器/KVC 尝试）→ AVSystemController 兜底。
-// 全部失败才默认 YES（宁可显示，不静默吞功能）。
+// ---------- 静音状态跟踪（对标 SystemX：由 SBRingerControl 钩子维护状态字节 0x691a8）----------
+static int gSPRingerKnown = -1; // -1 未知 / 0 未静音 / 1 静音
+
+static void SPRingerRemember(BOOL muted) { gSPRingerKnown = muted ? 1 : 0; }
+
+// 读系统当前是否静音：优先用钩子实时跟踪值；否则多路探测；
+// 全部失败默认"未静音"（操作方定行为：确认静音才显示图标，没开静音一律不显示）。
 static BOOL SPRingerMuted(void) {
+    if (gSPRingerKnown >= 0) return (gSPRingerKnown == 1);
     id rc = SPSingleton(@"SBRingerControl");
     if (rc) {
         NSArray *selNames = @[@"isRingerMuted", @"ringerMuted", @"isMuted", @"muted"];
         for (NSString *name in selNames) {
             SEL s = NSSelectorFromString(name);
             if ([rc respondsToSelector:s]) {
-                return ((BOOL (*)(id, SEL))objc_msgSend)(rc, s);
+                BOOL v = ((BOOL (*)(id, SEL))objc_msgSend)(rc, s);
+                SPRingerRemember(v);
+                return v;
             }
         }
-        NSArray *keyNames = @[@"isRingerMuted", @"ringerMuted", @"isMuted", @"muted"];
+        NSArray *keyNames = @[@"isRingerMuted", @"ringerMuted", @"isMuted", @"muted", @"_ringerMuted"];
         for (NSString *k in keyNames) {
             @try {
                 id v = [rc valueForKey:k];
-                if ([v isKindOfClass:[NSNumber class]]) return [v boolValue];
+                if ([v isKindOfClass:[NSNumber class]]) {
+                    SPRingerRemember([v boolValue]);
+                    return [v boolValue];
+                }
             } @catch (NSException *e) {}
         }
     }
@@ -128,35 +139,54 @@ static BOOL SPRingerMuted(void) {
         SEL s2 = NSSelectorFromString(@"getAttribute:forKey:");
         if ([av respondsToSelector:s3]) {
             ((BOOL (*)(id, SEL, void *, id, NSError *__autoreleasing *))objc_msgSend)(av, s3, &val, @"RingerMuted", NULL);
+            SPRingerRemember(val != 0);
             return val != 0;
         }
         if ([av respondsToSelector:s2]) {
             ((BOOL (*)(id, SEL, void *, id))objc_msgSend)(av, s2, &val, @"RingerMuted");
+            SPRingerRemember(val != 0);
             return val != 0;
         }
     }
-    return YES;
+    return NO;
 }
 
-static void SPSetRingerMuted(BOOL muted) {
-    Class asc = NSClassFromString(@"AVSystemController");
-    if (!asc) return;
-    id inst = ((id (*)(id, SEL))objc_msgSend)(asc, NSSelectorFromString(@"sharedAVSystemController"));
-    SEL s = NSSelectorFromString(@"setAttribute:forKey:error:");
-    if ([inst respondsToSelector:s]) {
-        ((BOOL (*)(id, SEL, id, id, NSError *__autoreleasing *))objc_msgSend)(inst, s, @(muted), @"RingerMuted", NULL);
+// 静音状态实时跟踪：init 时读一次当前值；两个 setter 全路径覆盖（选择子签名取自 SystemX 注册表实证）
+%hook SBRingerControl
+- (id)initWithBannerManager:(id)bannerManager soundController:(id)soundController {
+    id inst = %orig;
+    if (inst) {
+        SEL s = NSSelectorFromString(@"isRingerMuted");
+        if ([inst respondsToSelector:s]) {
+            SPRingerRemember(((BOOL (*)(id, SEL))objc_msgSend)(inst, s));
+        }
     }
+    return inst;
 }
-
-static void SPSyncRingerState(void) {
-    if (!SPIsSpringBoard) return;
-    SPSetRingerMuted(SPBool(kSilentStatusBarIcon));
+- (id)initWithHUDController:(id)hudController soundController:(id)soundController {
+    id inst = %orig;
+    if (inst) {
+        SEL s = NSSelectorFromString(@"isRingerMuted");
+        if ([inst respondsToSelector:s]) {
+            SPRingerRemember(((BOOL (*)(id, SEL))objc_msgSend)(inst, s));
+        }
+    }
+    return inst;
 }
+- (void)setRingerMuted:(BOOL)muted {
+    SPRingerRemember(muted);
+    %orig;
+}
+- (void)setRingerMuted:(BOOL)muted withFeedback:(id)feedback reason:(long long)reason clientType:(long long)clientType {
+    SPRingerRemember(muted);
+    %orig;
+}
+%end
 
 void SPStatusBarFeaturesInit(void) {
-    [[NSNotificationCenter defaultCenter] addObserverForName:@"SPPrefsReloaded" object:nil queue:nil
-        usingBlock:^(NSNotification *note) { SPSyncRingerState(); }];
-    SPSyncRingerState();
+    // 静音状态由 SBRingerControl 钩子维护（init 读取 + setter 实时跟踪），无需主动同步；
+    // 注意：不做「开启功能就强制静音」的副作用（未静音时图标不显示，纯被动反映真实状态）。
+    SPLog(@"statusbar features init");
 }
 
 // 上下偏移：叠加在系统每次重算 transform 之后（SystemX 同款做法，防"来回跳"）

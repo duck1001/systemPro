@@ -116,7 +116,7 @@ git tag v0.0.2-2 && git push origin --tags   # 触发 Release（rootless + rooth
 - [ ] 状态栏：日期显示 / 颜色随壁纸 / 偏移滑块拖动不跳
 - [ ] 手势：桌面空白双击、长按锁屏
 - [ ] 伪装电量：设 1-100 后生效（等系统刷新或注销）
-- [ ] 静音小图标：开开关 → 自动静音 + 状态栏出图标
+- [ ] 静音小图标：手机静音时状态栏出图标（拨动静音开关验证出现/消失）
 - [ ] Dock 五图标 / 文件夹 4×4（注销后复查）
 
 ## 6. iOS 16.2 实证选择器/API 白名单（可放心用）
@@ -135,3 +135,36 @@ git tag v0.0.2-2 && git push origin --tags   # 触发 Release（rootless + rooth
 
 功能/挂钩点来源：`sysbox_re_full.tar.gz`（hooks_final.tsv / cfstrings.txt / 三份域报告）。
 新增功能时在报告里找"实现要点"段落，按第 4 节流程落地。
+
+## 8. v0.0.3 功能轮 — 新钩子与教训
+
+**新功能来源（SystemX 键名对照）**：`colorizeVPNStatusBar` / `disconnectWiFiBT` /
+`autoDismissFaceID` 均为 SystemX 原功能，实现自研；`photosDefaultSound` 为自研新项。
+
+- **VPN 上色**：SystemX 机制 = 门控 0x691fa && VPN活跃(0x691fc)，在
+  `STUIStatusBarCellularNetworkTypeView setText:...` / `STUIStatusBarStringView applyStyleAttributes:` /
+  `STUIStatusBarWifiSignalView setActiveColor:/setInactiveColor:` / `_UIStatusBarCellularNetworkTypeView` /
+  `_UIStatusBarStringView` 五组钩子里注入 RGBA 颜色。本实现改为更稳的近似路径：
+  WiFi 用 `_fillColorForUpdate:entry:`（tsv 0x1f86c 实证存在）+ setActiveColor/setInactiveColor；
+  蜂窝/文字用 applyStyleAttributes 后置 setTextColor；VPN 文字靠 `text 含 "VPN"` 判定。
+  **VPN 活跃检测自研**：getifaddrs 扫 utun\*（IFF_UP + 有地址）→ NEVPNManager.status==3 兜底，1.5s TTL。
+- **彻底关闭 WiFi/蓝牙**：SystemX 钩 `BluetoothManager bluetoothStateActionWithCompletion:`（KVC
+  `_state`==3 走断开路径）+ WiFiKit `WFControlCenterStateMonitor _airplaneModeEnabled/performAction:`。
+  本实现：蓝牙动作后若原状已连接 → `setEnabled:/setPowered:NO` 强断链；WiFi 动作后读
+  SBWiFiManager/WirelessRadioManager 状态，若已关 → `setWiFiEnabled:/setPowered:NO` 强断链。
+  **全部 respondsToSelector 守卫 + @try**——查不到 API 就静默不动（防御外部改版）。
+- **面容解锁进主屏**：钩 `SBDashBoardLockScreenEnvironment
+  biometricUnlockBehavior:requestsUnlock:withFeedback:`（requestsUnlock==YES）+
+  `SBUIBiometricResource biometricKitInterface:handleEvent:`（event==0x0a），
+  两条链 0.2~0.22s 后调 `SBLockScreenManager unlockUIFromSource:withOptions:`（无则降级单参版）。
+  **共用 5s 节流窗口**替代 SystemX 的一次性标志字节（避免只触发一次的坑）。
+- **相册默认放音**：AVPlayer `setMuted:` 首次置 YES 时抑制（associated object 一次性标记），
+  之后的用户手动静音不受影响。仅在 Photos 进程生效。
+- **静音图标最终态**：状态改由 `SBRingerControl initWith*` 读取 + 两个 setter 实时跟踪
+  （gSPRingerKnown），探测全失败默认 **NO**（未确认静音不显示）；**去掉了「开功能即强切静音」副作用**。
+- **UI 定稿**：首页纯列表（无副标题/计数/页脚）、注销按钮右上角红色且仅首页、
+  需注销功能保存后直接弹「是否注销？」（确定红/取消蓝）、偏移改数字输入（-20~20）、
+  toast 全原生弹窗、不弹「正在注销中」。
+- **文件分类**：功能源码收进 `Features/` 平铺按域命名（StatusBar/Desktop/Disable/Photos/VPN/
+  Network/Lock.x），文档进 `Docs/`。**注意**：移动后 `#import` 全部改 `../` 前缀；
+  Makefile 的 `systemPro_FILES` 支持子目录路径（CI 实证）。

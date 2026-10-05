@@ -9,7 +9,9 @@ THEOS_PACKAGE_SCHEME ?= rootless
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = systemPro
-systemPro_FILES = Tweak.x Prefs.m Features_StatusBar.x Features_Desktop.x Features_Disable.x Features_Photos.x
+systemPro_FILES = Tweak.x Prefs.m \
+	Features/StatusBar.x Features/Desktop.x Features/Disable.x Features/Photos.x \
+	Features/VPN.x Features/Network.x Features/Lock.x
 systemPro_CFLAGS = -fobjc-arc -Wno-deprecated-declarations -Wno-unused-variable -Wno-unused-function
 systemPro_FRAMEWORKS = UIKit Foundation QuartzCore
 

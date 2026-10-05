@@ -93,6 +93,11 @@ void SPLockDevice(void);
 #define kHideZoomLevelControl       @"hideZoomLevelControl"
 #define kAllowSelectAll             @"allowSelectAll"
 #define kMarkAlbumNotUserCreated    @"markAlbumsAsNotUserCreated"
+#define kPhotosDefaultSound         @"photosDefaultSound"       // 视频默认放音
+// VPN / 网络 / 锁屏（0.0.3 功能轮）
+#define kVPNTint                    @"colorizeVPNStatusBar"      // VPN 上色（默认绿，联动 WiFi/蜂窝）
+#define kDisconnectWiFiBT           @"disconnectWiFiBT"         // 彻底关闭 WiFi 和蓝牙
+#define kAutoDismissFaceID          @"autoDismissFaceID"        // 面容解锁进入主屏幕
 
 // 设置面板里与系统分段的通用：分隔线在哪个进程被禁用
 static inline BOOL SPSeparatorsDisabled(void) {

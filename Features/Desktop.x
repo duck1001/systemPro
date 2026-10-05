@@ -8,9 +8,9 @@
 //   SBIconListFlowLayout numberOfColumns/Rows(3→4) / maximumIconCount  (文件夹 4×4)
 //   SBHIconManager iconViewDisplaysLabel: / SBIconController iconManager:iconViewDisplaysLabel:
 //   SBIconLabelImageParametersBuilder buildParameters  (文字阴影)
-#import "Common.h"
-#import "PrivateHeaders.h"
-#import "Prefs.h"
+#import "../Common.h"
+#import "../PrivateHeaders.h"
+#import "../Prefs.h"
 
 // ============================================================
 // 手势：双击/长按桌面空白锁屏

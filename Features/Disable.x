@@ -7,9 +7,9 @@
 //   SBNCScreenController canTurnOnScreenForNotificationRequest:              (0x14e60)
 //   SBBacklightController turnOnScreenFullyWithBacklightSource:              (0x14e14)
 //   SBLockScreenManager _setUILocked: / _reallySetUILocked:                  (0x1d31c/0x1d348)
-#import "Common.h"
-#import "PrivateHeaders.h"
-#import "Prefs.h"
+#import "../Common.h"
+#import "../PrivateHeaders.h"
+#import "../Prefs.h"
 
 %hook SBSearchGesture
 - (void)revealAnimated:(BOOL)animated {

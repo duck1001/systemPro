@@ -317,7 +317,7 @@ static void SPPrefsWrite(NSString *key, id value) {
     BOOL isSlider = (row.kind == SPRowKindSlider);
 
     self.toggle.hidden = !isSwitch;
-    self.valueLabel.hidden = !(isText || isInfo || isSlider || isLink);
+    self.valueLabel.hidden = !(isText || isInfo || isSlider);
     self.chevron.hidden = !(isText || isLink);
     self.slider.hidden = !isSlider;
     self.titleToToggle.active = !isSlider;
@@ -337,7 +337,7 @@ static void SPPrefsWrite(NSString *key, id value) {
     } else if (isText) {
         NSString *s = value ? [value description] : (row.defValue ?: @"");
         self.valueLabel.text = s.length ? s : @"默认";
-    } else if (isInfo || isLink) {
+    } else if (isInfo) {
         self.valueLabel.text = [value description];
     }
 }
@@ -537,13 +537,13 @@ static void SPPrefsWrite(NSString *key, id value) {
     self.view.backgroundColor = [UIColor systemGroupedBackgroundColor];
     self.prefs = SPPrefsLoad();
 
-    // 注销按钮：右上角、红色
+    // 注销按钮：右上角、红色；只在首页（主设置页）显示
     UIBarButtonItem *rb = [[UIBarButtonItem alloc] initWithTitle:@"注销"
                                                           style:UIBarButtonItemStylePlain
                                                          target:self
                                                          action:@selector(confirmRespring)];
     rb.tintColor = [UIColor systemRedColor];
-    self.navigationItem.rightBarButtonItem = rb;
+    if (self.pageIndex < 0) self.navigationItem.rightBarButtonItem = rb;
 
     // 只使用 iOS 16 上确有实现的选择器：PSListController 的 -table（SystemX 同款、实证可用）。
     // 绝不要再碰 -tableView（iOS 16 未实现 → unrecognized selector 闪退）。
@@ -635,7 +635,7 @@ static void SPPrefsWrite(NSString *key, id value) {
     return r;
 }
 - (NSString *)spPageName:(NSInteger)idx {
-    NSArray *names = @[@"状态栏", @"桌面与 Dock", @"文件夹", @"禁用与隐藏", @"相册"];
+    NSArray *names = @[@"状态栏", @"桌面与 Dock", @"文件夹", @"禁用与隐藏", @"相册", @"系统"];
     return (idx >= 0 && idx < (NSInteger)names.count) ? names[idx] : @"systemPro";
 }
 
@@ -650,19 +650,20 @@ static void SPPrefsWrite(NSString *key, id value) {
     UIColor *red    = [UIColor systemRedColor];
 
     SPSection *sb = [self section:@"状态栏"
-        footer:@"日期显示在状态栏时间下方；静音小图标开启时会自动把响铃切到静音。"
+        footer:@"日期显示在状态栏时间下方。"
         rows:@[
             [self sw:kStatusBarDateTime title:@"显示日期时间" sub:@"时间下方一行日期，可自定义格式与字号" icon:@"calendar.badge.clock" tint:orange respring:NO],
             [self tx:kSBCDateTimeTimeFormat title:@"时间格式" icon:@"clock" def:@"HH:mm" numeric:NO],
             [self tx:kSBCDateTimeDateFormat title:@"日期格式" icon:@"calendar" def:@"E MM/dd" numeric:NO],
             [self tx:kSBCDateTimeTimeFontSize title:@"时间字号" icon:@"textformat.size" def:@"15" numeric:YES],
             [self tx:kSBCDateTimeDateFontSize title:@"日期字号" icon:@"textformat.size" def:@"10" numeric:YES],
-            [self sl:kSBCDateTimeOffsetY title:@"整体上下偏移" icon:@"arrow.up.and.down"],
+            [self tx:kSBCDateTimeOffsetY title:@"整体上下偏移" icon:@"arrow.up.and.down" def:@"0" numeric:YES],
             [self sw:kSBCDateTimeEnglishDate title:@"英文日期" sub:nil icon:@"character" tint:teal respring:NO],
-            [self sw:kSilentStatusBarIcon title:@"静音小图标" sub:@"打开即切换静音并在状态栏显示图标" icon:@"bell.slash.fill" tint:purple respring:NO],
+            [self sw:kSilentStatusBarIcon title:@"静音小图标" sub:@"仅当手机处于静音模式时显示" icon:@"bell.slash.fill" tint:purple respring:NO],
             [self tx:kSilentStatusBarIconSymbol title:@"图标符号名" icon:@"square.grid.3x1.folder.badge.plus" def:@"bell.slash.fill" numeric:NO],
             [self sw:kForce5GAStatusBar title:@"蜂窝显示 5GA" sub:@"仅改状态栏文字，不改网络制式" icon:@"antenna.radiowaves.left.and.right" tint:green respring:NO],
             [self tx:kFakeBatteryPercent title:@"伪装电量（1-100，0=关）" icon:@"battery.75" def:@"0" numeric:YES],
+            [self sw:kVPNTint title:@"VPN 上色（默认绿）" sub:@"VPN 开启时：VPN / WiFi / 蜂窝一起变绿" icon:@"shield.lefthalf.filled" tint:green respring:NO],
         ]];
 
     SPSection *dt = [self section:@"桌面与 Dock"
@@ -706,13 +707,21 @@ static void SPPrefsWrite(NSString *key, id value) {
             [self sw:kHideZoomLevelControl title:@"隐藏年月日控件" sub:nil icon:@"calendar.day.timeline.left" tint:teal respring:NO],
             [self sw:kAllowSelectAll title:@"允许全选" sub:nil icon:@"checkmark.circle.fill" tint:green respring:NO],
             [self sw:kMarkAlbumNotUserCreated title:@"隐藏「我的相簿」分组" sub:nil icon:@"rectangle.stack.badge.minus" tint:orange respring:NO],
+            [self sw:kPhotosDefaultSound title:@"视频默认放音" sub:@"播放视频不再默认静音（手动静音不受影响）" icon:@"speaker.wave.2.fill" tint:purple respring:NO],
+        ]];
+
+    SPSection *sys = [self section:@"系统"
+        footer:@"「彻底关闭」只影响控制中心里关 Wi-Fi / 蓝牙的力度：真正断电，而非「关到明天」。"
+        rows:@[
+            [self sw:kDisconnectWiFiBT title:@"彻底关闭 WiFi 和蓝牙" sub:@"控制中心关开关时直接断电射频" icon:@"wifi.slash" tint:blue respring:NO],
+            [self sw:kAutoDismissFaceID title:@"面容解锁进入主屏幕" sub:@"Face ID 通过后自动收起锁屏" icon:@"faceid" tint:green respring:NO],
         ]];
 
     SPRow *au = [SPRow kind:SPRowKindInfo key:nil title:@"作者" subtitle:nil icon:@"person" tint:[UIColor systemGrayColor]];
     au.defValue = @"D";
     SPSection *about = [self section:@"关于" footer:nil rows:@[au]];
 
-    NSArray *all = @[sb, dt, fd, dis, ph];
+    NSArray *all = @[sb, dt, fd, dis, ph, sys];
     if (self.pageIndex >= 0) {
         // 子页：只装对应的一个分组；导航栏已是页名，去掉重复的分组标题
         NSInteger idx = MIN(MAX(self.pageIndex, 0), (NSInteger)all.count - 1);
@@ -725,29 +734,14 @@ static void SPPrefsWrite(NSString *key, id value) {
         return;
     }
 
-    // 首页：分页入口 + 维护 + 关于
-    NSArray *keySets = @[
-        @[kStatusBarDateTime, kSilentStatusBarIcon, kForce5GAStatusBar],
-        @[kFiveIconDock, kTransparentDock, kDoubleTapToLock, kLongPressToLock, kHideHomeBar,
-          kHideHomePageDots, kHideHomeIconLabels, kHideWidgetLabels, kHideHomeIconLabelShadow],
-        @[kFolder4x4],
-        @[kDisableTodayView, kDisableAppLibrary, kDisableHomePullDownSearch, kDisableSeparators,
-          kDisablePhoneSeparators, kDisableMessagesSeparators, kNotificationNoWake,
-          kChargingWakeDisabled, kNoLockAfterRespring],
-        @[kSkipDeleteConfirmation, kHideZoomLevelControl, kAllowSelectAll, kMarkAlbumNotUserCreated],
-    ];
-    SPRow *r0 = [self lk:@"状态栏" sub:@"日期时间 / 静音小图标 / 5GA / 伪装电量" icon:@"antenna.radiowaves.left.and.right" idx:0];
-    SPRow *r1 = [self lk:@"桌面与 Dock" sub:@"Dock 五图标 / 透明 Dock / 手势锁屏 / 隐藏项" icon:@"apps.iphone" idx:1];
-    SPRow *r2 = [self lk:@"文件夹" sub:@"4×4 布局" icon:@"folder.fill" idx:2];
-    SPRow *r3 = [self lk:@"禁用与隐藏" sub:@"负一屏 / 资源库 / 分隔线 / 唤醒 / 注销锁屏" icon:@"eye.slash.fill" idx:3];
-    SPRow *r4 = [self lk:@"相册" sub:@"删除确认 / 缩放控件 / 全选 / 相簿分组" icon:@"photo" idx:4];
-    NSArray *pageRows = @[r0, r1, r2, r3, r4];
-    for (NSInteger i = 0; i < (NSInteger)pageRows.count; i++) {
-        ((SPRow *)pageRows[i]).countKeys = keySets[i];
-    }
-    SPSection *pages = [self section:@""
-        footer:@"开关按页归类，点条目进入子页；改动即时保存并热重载，左上角可注销。"
-        rows:pageRows];
+    // 首页：分页入口 + 关于（不显示计数、不显示副标题、不显示页脚 —— 按操作方定稿）
+    SPRow *r0 = [self lk:@"状态栏" sub:nil icon:@"antenna.radiowaves.left.and.right" idx:0];
+    SPRow *r1 = [self lk:@"桌面与 Dock" sub:nil icon:@"apps.iphone" idx:1];
+    SPRow *r2 = [self lk:@"文件夹" sub:nil icon:@"folder.fill" idx:2];
+    SPRow *r3 = [self lk:@"禁用与隐藏" sub:nil icon:@"eye.slash.fill" idx:3];
+    SPRow *r4 = [self lk:@"相册" sub:nil icon:@"photo" idx:4];
+    SPRow *r5 = [self lk:@"系统" sub:nil icon:@"gearshape.2.fill" idx:5];
+    SPSection *pages = [self section:@"" footer:nil rows:@[r0, r1, r2, r3, r4, r5]];
     self.model = [@[pages, about] mutableCopy];
 }
 
@@ -763,11 +757,6 @@ static void SPPrefsWrite(NSString *key, id value) {
         cell = [[SPCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"cell"];
     }
     id value = (row.kind == SPRowKindInfo) ? row.defValue : self.prefs[row.key];
-    if (row.kind == SPRowKindLink && row.countKeys.count > 0) {
-        NSInteger on = 0;
-        for (NSString *k in row.countKeys) { if ([self.prefs[k] boolValue]) on++; }
-        value = [NSString stringWithFormat:@"%ld/%ld", (long)on, (long)row.countKeys.count];
-    }
     [cell configureWithRow:row value:value];
     __weak typeof(self) weakSelf = self;
     if (row.kind == SPRowKindSwitch) {
@@ -822,7 +811,13 @@ static void SPPrefsWrite(NSString *key, id value) {
     UIImpactFeedbackGenerator *h = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight];
     [h impactOccurred];
 
-    if (row.needsRespring) [self showToast:@"已保存 · 该项需注销后生效"];
+    if (row.needsRespring) {
+        // 需要注销生效的功能：保存后直接问「是否注销？」（确定红 / 取消蓝），不再只弹提示
+        if (row.kind != SPRowKindSlider) [self.contentTable reloadData];
+        [self confirmRespring];
+        [self updateHeroCount];
+        return;
+    }
     if (row.kind != SPRowKindSlider) [self.contentTable reloadData]; // 拖动滑块时不整表刷新
     [self updateHeroCount];
 }
@@ -858,6 +853,7 @@ static void SPPrefsWrite(NSString *key, id value) {
 
 #pragma mark - 注销（二次确认 + 多路降级 + 失败提示）
 - (void)confirmRespring {
+    if (self.presentedViewController) return; // 已有弹窗时不叠加
     UIAlertController *a = [UIAlertController alertControllerWithTitle:@"是否注销？"
         message:nil
         preferredStyle:UIAlertControllerStyleAlert];
@@ -903,8 +899,7 @@ static void SPPrefsWrite(NSString *key, id value) {
             pid_t pid = 0;
             int rc = posix_spawn(&pid, path.UTF8String, NULL, NULL, (char *const *)argv, environ);
             if (rc == 0) {
-                [self showToast:@"正在注销…"];
-                return;
+                return; // 注销指令已发出 —— 不弹「正在注销中」提示（按操作方要求）
             }
         }
     }
