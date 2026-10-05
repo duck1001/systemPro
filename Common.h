@@ -52,7 +52,7 @@ static NSString *SPJailbreakRoot(void) {
                 break;
             }
         }
-        SPLog(@"jbroot resolved: %@", cached ?: @"(none/rootless)");
+        NSLog(@"[systemPro] jbroot resolved: %@", cached ?: @"(none/rootless)");
     });
     return cached;
 }
