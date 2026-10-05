@@ -20,16 +20,19 @@ static NSDateFormatter *gTimeFmt = nil;
 static NSDateFormatter *gDateFmt = nil;
 static NSString *gTimeFmtStr = nil;
 static NSString *gDateFmtStr = nil;
+// 标记：该 displayItem 是我们的时间项（用于 _updateComputedTransform 里叠加上下偏移）
+static const void *kSPTimeMarker = &kSPTimeMarker;
 
 static NSDateFormatter *SPFormatter(NSString *fmt, BOOL english, BOOL isTime) {
+    NSString *key = [NSString stringWithFormat:@"%@|%@", fmt, english ? @"en" : @"sys"];
     NSDateFormatter *__strong *slot = isTime ? &gTimeFmt : &gDateFmt;
     NSString *__strong *slotStr     = isTime ? &gTimeFmtStr : &gDateFmtStr;
-    if (*slot && [*slotStr isEqualToString:fmt]) return *slot;
+    if (*slot && [*slotStr isEqualToString:key]) return *slot;
     NSDateFormatter *f = [[NSDateFormatter alloc] init];
     f.dateFormat = fmt;
     if (english) f.locale = [NSLocale localeWithLocaleIdentifier:@"en_US"];
     *slot = f;
-    *slotStr = [fmt copy];
+    *slotStr = key;
     return f;
 }
 
@@ -58,7 +61,14 @@ static void SPDateTimeApply(id displayItem) {
 
     double tSize = SPFloat(kSBCDateTimeTimeFontSize);  if (tSize <= 0) tSize = 15.0;
     double dSize = SPFloat(kSBCDateTimeDateFontSize);  if (dSize <= 0) dSize = 10.0;
-    double offY  = SPFloat(kSBCDateTimeOffsetY);
+    // 前景色跟随系统（壁纸自适应），不要写死黑/白
+    UIColor *fg = label.textColor;
+    NSAttributedString *cur = label.attributedText;
+    if (cur.length > 0) {
+        UIColor *c = [cur attribute:NSForegroundColorAttributeName atIndex:0 effectiveRange:NULL];
+        if (c) fg = c;
+    }
+    if (!fg) fg = [UIColor labelColor];
 
     NSMutableParagraphStyle *ps = [[NSMutableParagraphStyle alloc] init];
     ps.alignment = NSTextAlignmentCenter;
@@ -66,19 +76,43 @@ static void SPDateTimeApply(id displayItem) {
 
     NSMutableAttributedString *attr = [[NSMutableAttributedString alloc] initWithString:timeStr
         attributes:@{ NSFontAttributeName: [UIFont systemFontOfSize:tSize weight:UIFontWeightSemibold],
+                      NSForegroundColorAttributeName: fg,
                       NSParagraphStyleAttributeName: ps }];
     [attr appendAttributedString:[[NSAttributedString alloc] initWithString:[@"\n" stringByAppendingString:dateStr]
         attributes:@{ NSFontAttributeName: [UIFont systemFontOfSize:dSize weight:UIFontWeightRegular],
+                      NSForegroundColorAttributeName: fg,
                       NSParagraphStyleAttributeName: ps }]];
 
     label.numberOfLines = 2;
     label.attributedText = attr;
-    label.transform = CGAffineTransformMakeTranslation(0, offY);
+    // 标记"这是我们的时间项"：上下偏移改由 _updateComputedTransform 统一叠加（防跳）
+    objc_setAssociatedObject(displayItem, kSPTimeMarker, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 
 // ============================================================
 // 二、静音小图标（含自定义 SF Symbol + 响铃同步）
 // ============================================================
+static id SPSingleton(NSString *clsName) {
+    Class c = NSClassFromString(clsName);
+    if (!c) return nil;
+    SEL s = NSSelectorFromString(@"sharedInstance");
+    if ([c respondsToSelector:s]) return ((id (*)(id, SEL))objc_msgSend)(c, s);
+    return nil;
+}
+
+// 读系统当前是否静音（SBRingerControl.isRingerMuted，取不到默认 YES）
+static BOOL SPRingerMuted(void) {
+    id rc = SPSingleton(@"SBRingerControl");
+    if (rc) {
+        @try {
+            if ([rc respondsToSelector:NSSelectorFromString(@"isRingerMuted")]) {
+                return [[rc valueForKey:@"isRingerMuted"] boolValue];
+            }
+        } @catch (NSException *e) {}
+    }
+    return YES;
+}
+
 static void SPSetRingerMuted(BOOL muted) {
     Class asc = NSClassFromString(@"AVSystemController");
     if (!asc) return;
@@ -99,6 +133,35 @@ void SPStatusBarFeaturesInit(void) {
         usingBlock:^(NSNotification *note) { SPSyncRingerState(); }];
     SPSyncRingerState();
 }
+
+// 上下偏移：叠加在系统每次重算 transform 之后（SystemX 同款做法，防"来回跳"）
+%hook STUIStatusBarDisplayItem
+- (void)_updateComputedTransform {
+    %orig;
+    if (![objc_getAssociatedObject(self, kSPTimeMarker) boolValue]) return;
+    double offY = SPFloat(kSBCDateTimeOffsetY);
+    if (fabs(offY) < 0.0001) return;
+    id view = nil;
+    @try { view = [self valueForKey:@"view"]; } @catch (NSException *e) {}
+    if (![view isKindOfClass:[UIView class]]) return;
+    UIView *v = (UIView *)view;
+    v.transform = CGAffineTransformTranslate(v.transform, 0, offY);
+}
+%end
+
+%hook _UIStatusBarDisplayItem
+- (void)_updateComputedTransform {
+    %orig;
+    if (![objc_getAssociatedObject(self, kSPTimeMarker) boolValue]) return;
+    double offY = SPFloat(kSBCDateTimeOffsetY);
+    if (fabs(offY) < 0.0001) return;
+    id view = nil;
+    @try { view = [self valueForKey:@"view"]; } @catch (NSException *e) {}
+    if (![view isKindOfClass:[UIView class]]) return;
+    UIView *v = (UIView *)view;
+    v.transform = CGAffineTransformTranslate(v.transform, 0, offY);
+}
+%end
 
 %hook STUIStatusBarTimeItem
 - (id)applyUpdate:(id)update toDisplayItem:(id)displayItem {
@@ -123,6 +186,29 @@ void SPStatusBarFeaturesInit(void) {
         return sym.length ? sym : @"bell.slash.fill";
     }
     return %orig;
+}
+%end
+
+%hook _UIStatusBarIndicatorQuietModeItem
+- (id)systemImageNameForUpdate:(id)update {
+    if (SPIsSpringBoard && SPBool(kSilentStatusBarIcon)) {
+        NSString *sym = SPString(kSilentStatusBarIconSymbol, @"bell.slash.fill");
+        return sym.length ? sym : @"bell.slash.fill";
+    }
+    return %orig;
+}
+%end
+
+// 借"专注/静音"数据项上屏：静音时往 focusName 打标记，系统即显示 quiet-mode 图标
+// （选择器实证自 SystemX：initFromData:type:focusName:maxFocusLength:imageName:maxImageLength:boolValue:）
+%hook _UIStatusBarDataQuietModeEntry
+- (id)initFromData:(id)data type:(long)type focusName:(id)focusName
+    maxFocusLength:(long)mfl imageName:(id)imageName maxImageLength:(long)mil boolValue:(BOOL)bv {
+    id inst = %orig(data, type, focusName, mfl, imageName, mil, bv);
+    if (SPIsSpringBoard && SPBool(kSilentStatusBarIcon) && SPRingerMuted()) {
+        @try { [inst setValue:@"!Mute" forKey:@"focusName"]; } @catch (NSException *e) {}
+    }
+    return inst;
 }
 %end
 

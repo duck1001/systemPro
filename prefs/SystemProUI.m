@@ -23,6 +23,7 @@ typedef NS_ENUM(NSInteger, SPRowKind) {
     SPRowKindButton,
     SPRowKindInfo,
     SPRowKindLink,
+    SPRowKindSlider,
 };
 
 @interface SPRow : NSObject
@@ -38,6 +39,8 @@ typedef NS_ENUM(NSInteger, SPRowKind) {
 @property (nonatomic) BOOL destructive;
 @property (nonatomic, copy) NSString *actionName;
 @property (nonatomic) NSInteger pageIndex;   // SPRowKindLink: 目标子页编号
+@property (nonatomic) double minValue;       // SPRowKindSlider
+@property (nonatomic) double maxValue;
 @end
 
 @implementation SPRow
@@ -101,7 +104,7 @@ static void SPPrefsWrite(NSString *key, id value) {
         [card addSubview:iconWrap];
         UIImageView *icon = [[UIImageView alloc] initWithImage:
             [UIImage systemImageNamed:@"wand.and.stars" withConfiguration:
-                [UIImageSymbolConfiguration configurationWithPointSize:26 weight:UIImageSymbolWeightSemibold]]];
+                [UIImageSymbolConfiguration configurationWithPointSize:22 weight:UIImageSymbolWeightSemibold]]];
         icon.tintColor = [UIColor whiteColor];
         icon.translatesAutoresizingMaskIntoConstraints = NO;
         [iconWrap addSubview:icon];
@@ -191,7 +194,11 @@ static void SPPrefsWrite(NSString *key, id value) {
 @property (nonatomic, strong) UISwitch *toggle;
 @property (nonatomic, strong) UILabel *valueLabel;
 @property (nonatomic, strong) UIImageView *chevron;
+@property (nonatomic, strong) UISlider *slider;
+@property (nonatomic, strong) NSLayoutConstraint *titleToToggle;
+@property (nonatomic, strong) NSLayoutConstraint *titleToSlider;
 @property (nonatomic, copy) void (^onToggle)(BOOL on);
+@property (nonatomic, copy) void (^onSlider)(double v);
 @property (nonatomic, strong) NSLayoutConstraint *subZero;
 @end
 
@@ -200,7 +207,7 @@ static void SPPrefsWrite(NSString *key, id value) {
     if ((self = [super initWithStyle:style reuseIdentifier:reuseIdentifier])) {
         _chip = [UIView new];
         _chip.translatesAutoresizingMaskIntoConstraints = NO;
-        _chip.layer.cornerRadius = 7.5;
+        _chip.layer.cornerRadius = 7.0;
         _chip.layer.cornerCurve = kCACornerCurveContinuous;
         [self.contentView addSubview:_chip];
 
@@ -246,8 +253,8 @@ static void SPPrefsWrite(NSString *key, id value) {
         [NSLayoutConstraint activateConstraints:@[
             [_chip.leadingAnchor constraintEqualToAnchor:self.contentView.leadingAnchor constant:16],
             [_chip.centerYAnchor constraintEqualToAnchor:self.contentView.centerYAnchor],
-            [_chip.widthAnchor constraintEqualToConstant:30],
-            [_chip.heightAnchor constraintEqualToConstant:30],
+            [_chip.widthAnchor constraintEqualToConstant:26],
+            [_chip.heightAnchor constraintEqualToConstant:26],
             [_rowIcon.centerXAnchor constraintEqualToAnchor:_chip.centerXAnchor],
             [_rowIcon.centerYAnchor constraintEqualToAnchor:_chip.centerYAnchor],
             [_titleLabel.leadingAnchor constraintEqualToAnchor:_chip.trailingAnchor constant:12],
@@ -263,18 +270,37 @@ static void SPPrefsWrite(NSString *key, id value) {
             [_chevron.trailingAnchor constraintEqualToAnchor:self.contentView.trailingAnchor constant:-16],
             [_chevron.centerYAnchor constraintEqualToAnchor:self.contentView.centerYAnchor],
         ]];
-        // title 右侧避让（不压到开关/值）
-        [[_titleLabel.trailingAnchor constraintLessThanOrEqualToAnchor:_toggle.leadingAnchor constant:-8] setActive:YES];
+        // 滑块（SPRowKindSlider 专用；其他行隐藏）
+        _slider = [UISlider new];
+        _slider.translatesAutoresizingMaskIntoConstraints = NO;
+        _slider.minimumTrackTintColor = _toggle.onTintColor;
+        _slider.hidden = YES;
+        [_slider addTarget:self action:@selector(sliderChanged:) forControlEvents:UIControlEventValueChanged];
+        [self.contentView addSubview:_slider];
+
+        // title 右侧避让：普通行让给开关；滑块行让给滑块
+        _titleToToggle = [_titleLabel.trailingAnchor constraintLessThanOrEqualToAnchor:_toggle.leadingAnchor constant:-8];
+        _titleToSlider = [_titleLabel.trailingAnchor constraintLessThanOrEqualToAnchor:_slider.leadingAnchor constant:-8];
+        [NSLayoutConstraint activateConstraints:@[
+            [_slider.trailingAnchor constraintEqualToAnchor:_valueLabel.leadingAnchor constant:-8],
+            [_slider.centerYAnchor constraintEqualToAnchor:self.contentView.centerYAnchor],
+            [_slider.widthAnchor constraintEqualToConstant:140],
+        ]];
+        _titleToToggle.active = YES;
     }
     return self;
 }
 - (void)toggleChanged:(UISwitch *)sw {
     if (self.onToggle) self.onToggle(sw.isOn);
 }
+- (void)sliderChanged:(UISlider *)s {
+    self.valueLabel.text = [NSString stringWithFormat:@"%.0f", s.value];
+    if (self.onSlider) self.onSlider(round(s.value));
+}
 - (void)configureWithRow:(SPRow *)row value:(id)value {
     self.chip.backgroundColor = row.tint;
     self.rowIcon.image = [UIImage systemImageNamed:row.icon withConfiguration:
-        [UIImageSymbolConfiguration configurationWithPointSize:15 weight:UIImageSymbolWeightSemibold]];
+        [UIImageSymbolConfiguration configurationWithPointSize:13 weight:UIImageSymbolWeightSemibold]];
     self.titleLabel.text = row.title;
     self.subLabel.text = row.subtitle;
     BOOL hasSub = (row.subtitle.length > 0);
@@ -286,11 +312,22 @@ static void SPPrefsWrite(NSString *key, id value) {
     BOOL isInfo   = (row.kind == SPRowKindInfo);
     BOOL isButton = (row.kind == SPRowKindButton);
     BOOL isLink   = (row.kind == SPRowKindLink);
+    BOOL isSlider = (row.kind == SPRowKindSlider);
 
     self.toggle.hidden = !isSwitch;
-    self.valueLabel.hidden = !(isText || isInfo);
+    self.valueLabel.hidden = !(isText || isInfo || isSlider);
     self.chevron.hidden = !(isText || isLink);
-    self.selectionStyle = (isSwitch || isText || isButton) ? UITableViewCellSelectionStyleDefault : UITableViewCellSelectionStyleNone;
+    self.slider.hidden = !isSlider;
+    self.titleToToggle.active = !isSlider;
+    self.titleToSlider.active = isSlider;
+    if (isSlider) {
+        self.slider.minimumValue = (float)row.minValue;
+        self.slider.maximumValue = (float)row.maxValue;
+        double v = value ? [value doubleValue] : [row.defValue doubleValue];
+        self.slider.value = (float)v;
+        self.valueLabel.text = [NSString stringWithFormat:@"%.0f", v];
+    }
+    self.selectionStyle = (isText || isButton || isLink) ? UITableViewCellSelectionStyleDefault : UITableViewCellSelectionStyleNone;
     self.titleLabel.textColor = row.destructive ? [UIColor systemRedColor] : [UIColor labelColor];
 
     if (isSwitch) {
@@ -556,6 +593,13 @@ static void SPPrefsWrite(NSString *key, id value) {
     r.pageIndex = idx;
     return r;
 }
+- (SPRow *)sl:(NSString *)key title:(NSString *)t icon:(NSString *)icon {
+    SPRow *r = [SPRow kind:SPRowKindSlider key:key title:t subtitle:nil icon:icon tint:[UIColor systemGrayColor]];
+    r.minValue = -20;
+    r.maxValue = 20;
+    r.defValue = @"0";
+    return r;
+}
 - (NSString *)spPageName:(NSInteger)idx {
     NSArray *names = @[@"状态栏", @"桌面与 Dock", @"文件夹", @"禁用与隐藏", @"相册"];
     return (idx >= 0 && idx < (NSInteger)names.count) ? names[idx] : @"systemPro";
@@ -579,7 +623,7 @@ static void SPPrefsWrite(NSString *key, id value) {
             [self tx:kSBCDateTimeDateFormat title:@"日期格式" icon:@"calendar" def:@"E MM/dd" numeric:NO],
             [self tx:kSBCDateTimeTimeFontSize title:@"时间字号" icon:@"textformat.size" def:@"15" numeric:YES],
             [self tx:kSBCDateTimeDateFontSize title:@"日期字号" icon:@"textformat.size" def:@"10" numeric:YES],
-            [self tx:kSBCDateTimeOffsetY title:@"整体上下偏移" icon:@"arrow.up.and.down" def:@"0" numeric:YES],
+            [self sl:kSBCDateTimeOffsetY title:@"整体上下偏移" icon:@"arrow.up.and.down"],
             [self sw:kSBCDateTimeEnglishDate title:@"英文日期" sub:nil icon:@"character" tint:teal respring:NO],
             [self sw:kSilentStatusBarIcon title:@"静音小图标" sub:@"打开即切换静音并在状态栏显示图标" icon:@"bell.slash.fill" tint:purple respring:NO],
             [self tx:kSilentStatusBarIconSymbol title:@"图标符号名" icon:@"square.grid.3x1.folder.badge.plus" def:@"bell.slash.fill" numeric:NO],
@@ -693,6 +737,13 @@ static void SPPrefsWrite(NSString *key, id value) {
     } else {
         cell.onToggle = nil;
     }
+    if (row.kind == SPRowKindSlider) {
+        cell.onSlider = ^(double v) {
+            [weakSelf setPref:row.key value:[NSString stringWithFormat:@"%.0f", v] row:row];
+        };
+    } else {
+        cell.onSlider = nil;
+    }
     return cell;
 }
 
@@ -701,10 +752,7 @@ static void SPPrefsWrite(NSString *key, id value) {
     SPRow *row = [self spRowAtIndexPath:indexPath];
     if (!row) return;
     if (row.kind == SPRowKindSwitch) {
-        SPCell *cell = (SPCell *)[tableView cellForRowAtIndexPath:indexPath];
-        BOOL on = !cell.toggle.isOn;
-        [cell.toggle setOn:on animated:YES];
-        [self setPref:row.key value:@(on) row:row];
+        return; // 只允许点开关本体切换；点文字/行不再切换
     } else if (row.kind == SPRowKindText) {
         SPEditController *e = [SPEditController new];
         e.row = row;
@@ -735,7 +783,7 @@ static void SPPrefsWrite(NSString *key, id value) {
     [h impactOccurred];
 
     if (row.needsRespring) [self showToast:@"已保存 · 该项需注销后生效"];
-    [self.contentTable reloadData];
+    if (row.kind != SPRowKindSlider) [self.contentTable reloadData]; // 拖动滑块时不整表刷新
     [self updateHeroCount];
 }
 

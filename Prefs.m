@@ -61,7 +61,12 @@ static void SPPrefsChangedCallback(CFNotificationCenterRef center, void *observe
     return NO;
 }
 
-- (long)intFor:(NSString *)key      { id v = [self valueFor:key]; return [v respondsToSelector:@selector(longValue)] ? [v longValue] : 0; }
+- (long)intFor:(NSString *)key {
+    id v = [self valueFor:key];
+    if ([v isKindOfClass:[NSNumber class]]) return [v longValue];
+    if ([v isKindOfClass:[NSString class]]) return [(NSString *)v integerValue]; // 面板以字符串存数字
+    return 0;
+}
 - (double)floatFor:(NSString *)key  { id v = [self valueFor:key]; return [v respondsToSelector:@selector(doubleValue)] ? [v doubleValue] : 0; }
 
 - (NSString *)stringFor:(NSString *)key default:(NSString *)def {
