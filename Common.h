@@ -29,7 +29,7 @@
 // roothide 把越狱根挂在隐藏目录 `.jbroot-*` 下，真实 /var 与面板可见路径不同；
 // 插件与面板必须解析到同一份 plist，否则「开关存住了但功能不生效」。
 // 解析顺序：环境变量 JBROOT（roothide 运行时提供）→ 扫描 /.jbroot-* → 老式绝对路径。
-static NSString *SPJailbreakRoot(void) {
+__attribute__((unused)) static NSString *SPJailbreakRoot(void) {
     static NSString *cached = nil;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -58,7 +58,7 @@ static NSString *SPJailbreakRoot(void) {
 }
 
 // 解析首选项 plist 的真实路径：优先 roothide jbroot 镜像，回退标准路径
-static NSString *SPPreferencesPath(void) {
+__attribute__((unused)) static NSString *SPPreferencesPath(void) {
     NSString *rel = @"var/mobile/Library/Preferences/com.sytem.pro.plist";
     NSString *root = SPJailbreakRoot();
     if (root.length) {
@@ -75,7 +75,7 @@ static NSString *SPPreferencesPath(void) {
 // ⚠️ 不能用 [[NSBundle mainBundle] bundleIdentifier]：roothide/部分越狱下
 // SpringBoard 的 mainBundle 为空或异常 → 所有 SPIsXxx 为 false → 全部门禁不放行（功能全组死）。
 // 正确姿势：进程可执行路径 + 进程名（argv[0] / 可执行路径尾部），不依赖 bundle。
-static NSString *SPProcessName(void) {
+__attribute__((unused)) static NSString *SPProcessName(void) {
     static NSString *cached = nil;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -89,7 +89,7 @@ static NSString *SPProcessName(void) {
     return cached;
 }
 
-static BOOL SPProcessIs(NSString *name) {
+__attribute__((unused)) static BOOL SPProcessIs(NSString *name) {
     NSString *p = SPProcessName();
     if (p.length && [p isEqualToString:name]) return YES;
     // 兜底：再用 bundleId 判一次（两条都中任一即可）
