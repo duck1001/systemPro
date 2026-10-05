@@ -337,7 +337,7 @@ static void SPPrefsWrite(NSString *key, id value) {
     } else if (isText) {
         NSString *s = value ? [value description] : (row.defValue ?: @"");
         self.valueLabel.text = s.length ? s : @"默认";
-    } else if (isInfo) {
+    } else if (isInfo || isLink) {
         self.valueLabel.text = [value description];
     }
 }
@@ -537,13 +537,13 @@ static void SPPrefsWrite(NSString *key, id value) {
     self.view.backgroundColor = [UIColor systemGroupedBackgroundColor];
     self.prefs = SPPrefsLoad();
 
-    // 注销按钮放左上角（保留系统返回键：leftItemsSupplementBackButton）
+    // 注销按钮：右上角、红色
     UIBarButtonItem *rb = [[UIBarButtonItem alloc] initWithTitle:@"注销"
                                                           style:UIBarButtonItemStylePlain
                                                          target:self
                                                          action:@selector(confirmRespring)];
-    self.navigationItem.leftBarButtonItem = rb;
-    self.navigationItem.leftItemsSupplementBackButton = YES;
+    rb.tintColor = [UIColor systemRedColor];
+    self.navigationItem.rightBarButtonItem = rb;
 
     // 只使用 iOS 16 上确有实现的选择器：PSListController 的 -table（SystemX 同款、实证可用）。
     // 绝不要再碰 -tableView（iOS 16 未实现 → unrecognized selector 闪退）。
@@ -552,8 +552,26 @@ static void SPPrefsWrite(NSString *key, id value) {
     self.contentTable = tv;
     if (tv) tv.backgroundColor = [UIColor systemGroupedBackgroundColor];
     if (tv && self.pageIndex < 0) {
-        self.hero = [[SPHeroView alloc] initWithFrame:CGRectMake(0, 0, tv.bounds.size.width, 158)];
-        tv.tableHeaderView = self.hero;
+        // 极简头部：只留插件标题 + 版本号（砍掉大卡片）
+        UIView *hdr = [[UIView alloc] initWithFrame:CGRectMake(0, 0, tv.bounds.size.width, 78)];
+        UILabel *t = [UILabel new];
+        t.text = @"systemPro";
+        t.font = [UIFont systemFontOfSize:28 weight:UIFontWeightBold];
+        t.translatesAutoresizingMaskIntoConstraints = NO;
+        UILabel *vv = [UILabel new];
+        vv.text = [NSString stringWithFormat:@"v%@", SP_VERSION];
+        vv.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+        vv.textColor = [UIColor secondaryLabelColor];
+        vv.translatesAutoresizingMaskIntoConstraints = NO;
+        [hdr addSubview:t];
+        [hdr addSubview:vv];
+        [NSLayoutConstraint activateConstraints:@[
+            [t.leadingAnchor constraintEqualToAnchor:hdr.leadingAnchor constant:24],
+            [t.topAnchor constraintEqualToAnchor:hdr.topAnchor constant:10],
+            [vv.leadingAnchor constraintEqualToAnchor:t.leadingAnchor],
+            [vv.topAnchor constraintEqualToAnchor:t.bottomAnchor constant:2],
+        ]];
+        tv.tableHeaderView = hdr;
     }
 }
 
@@ -690,26 +708,9 @@ static void SPPrefsWrite(NSString *key, id value) {
             [self sw:kMarkAlbumNotUserCreated title:@"隐藏「我的相簿」分组" sub:nil icon:@"rectangle.stack.badge.minus" tint:orange respring:NO],
         ]];
 
-    SPRow *reset = [SPRow kind:SPRowKindButton key:nil title:@"恢复默认设置"
-                          subtitle:@"清空全部开关（有二次确认）" icon:@"arrow.counterclockwise" tint:red];
-    reset.actionName = @"reset";
-    reset.destructive = YES;
-
-    SPSection *maint = [self section:@"维护"
-        footer:@"注销在左上角；改动即时保存并通过 com.sytem.pro.prefschanged 通知插件热重载。"
-        rows:@[reset]];
-
-    SPRow *v = [SPRow kind:SPRowKindInfo key:nil title:@"版本" subtitle:nil icon:@"tag" tint:[UIColor systemGrayColor]];
-    v.defValue = SP_VERSION;
     SPRow *au = [SPRow kind:SPRowKindInfo key:nil title:@"作者" subtitle:nil icon:@"person" tint:[UIColor systemGrayColor]];
     au.defValue = @"D";
-    SPRow *idr = [SPRow kind:SPRowKindInfo key:nil title:@"标识" subtitle:nil icon:@"number" tint:[UIColor systemGrayColor]];
-    idr.defValue = @"com.sytem.pro";
-    SPRow *link = [SPRow kind:SPRowKindInfo key:nil title:@"状态" subtitle:nil icon:@"bolt.fill" tint:[UIColor systemGrayColor]];
-    link.defValue = @"热重载已启用";
-    SPSection *about = [self section:@"关于"
-        footer:@"systemPro · 手搓实现的越狱功能套件。改动即时保存，误操作可在「维护」里恢复默认。"
-        rows:@[v, au, idr, link]];
+    SPSection *about = [self section:@"关于" footer:nil rows:@[au]];
 
     NSArray *all = @[sb, dt, fd, dis, ph];
     if (self.pageIndex >= 0) {
@@ -747,7 +748,7 @@ static void SPPrefsWrite(NSString *key, id value) {
     SPSection *pages = [self section:@""
         footer:@"开关按页归类，点条目进入子页；改动即时保存并热重载，左上角可注销。"
         rows:pageRows];
-    self.model = [@[pages, maint, about] mutableCopy];
+    self.model = [@[pages, about] mutableCopy];
 }
 
 #pragma mark - 表格数据源 / 交互（分节与行序由框架 specifier 模型负责）
@@ -845,44 +846,23 @@ static void SPPrefsWrite(NSString *key, id value) {
     self.hero.countLabel.text = [NSString stringWithFormat:@"已启用 %ld / %ld 项功能", (long)on, (long)keys.count];
 }
 
+// 原生弹窗提示（替代自绘 toast）
 - (void)showToast:(NSString *)text {
-    UILabel *toast = [UILabel new];
-    toast.text = text;
-    toast.font = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
-    toast.textColor = [UIColor whiteColor];
-    toast.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.82];
-    toast.textAlignment = NSTextAlignmentCenter;
-    toast.numberOfLines = 0;
-    toast.layer.cornerRadius = 15;
-    toast.layer.cornerCurve = kCACornerCurveContinuous;
-    toast.layer.masksToBounds = YES;
-    toast.alpha = 0;
-
-    CGSize bound = [text boundingRectWithSize:CGSizeMake(self.view.bounds.size.width - 96, 80)
-                                      options:NSStringDrawingUsesLineFragmentOrigin
-                                   attributes:@{ NSFontAttributeName: toast.font } context:nil].size;
-    CGFloat w = MAX(bound.width + 34, 140);
-    CGFloat h = bound.height + 16;
-    toast.frame = CGRectMake((self.view.bounds.size.width - w) / 2, self.view.bounds.size.height - 130, w, h);
-    toast.autoresizingMask = UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin;
-    [self.view addSubview:toast];
-
-    [UIView animateWithDuration:0.22 animations:^{ toast.alpha = 1; } completion:^(BOOL f) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.6 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            [UIView animateWithDuration:0.3 animations:^{ toast.alpha = 0; } completion:^(BOOL f2) {
-                [toast removeFromSuperview];
-            }];
-        });
-    }];
+    if (self.presentedViewController) return; // 避免重复 present
+    UIAlertController *a = [UIAlertController alertControllerWithTitle:nil
+                                                              message:text
+                                                       preferredStyle:UIAlertControllerStyleAlert];
+    [a addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
+    [self presentViewController:a animated:YES completion:nil];
 }
 
 #pragma mark - 注销（二次确认 + 多路降级 + 失败提示）
 - (void)confirmRespring {
-    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"注销 SpringBoard？"
-        message:@"所有更改已保存，注销后生效。部分布局类修改（Dock / 文件夹）必须注销。"
+    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"是否注销？"
+        message:nil
         preferredStyle:UIAlertControllerStyleAlert];
     [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
-    [a addAction:[UIAlertAction actionWithTitle:@"立即注销" style:UIAlertActionStyleDestructive
+    [a addAction:[UIAlertAction actionWithTitle:@"注销" style:UIAlertActionStyleDestructive
                                         handler:^(UIAlertAction *x) { [self spawnRespring]; }]];
     [self presentViewController:a animated:YES completion:nil];
 }
