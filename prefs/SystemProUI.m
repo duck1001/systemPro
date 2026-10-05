@@ -42,6 +42,7 @@ typedef NS_ENUM(NSInteger, SPRowKind) {
 @property (nonatomic) NSInteger pageIndex;   // SPRowKindLink: 目标子页编号
 @property (nonatomic) double minValue;       // SPRowKindSlider
 @property (nonatomic) double maxValue;
+@property (nonatomic, strong) NSArray<NSString *> *countKeys;   // SPRowKindLink: 入口计数键集
 @end
 
 @implementation SPRow
@@ -316,7 +317,7 @@ static void SPPrefsWrite(NSString *key, id value) {
     BOOL isSlider = (row.kind == SPRowKindSlider);
 
     self.toggle.hidden = !isSwitch;
-    self.valueLabel.hidden = !(isText || isInfo || isSlider);
+    self.valueLabel.hidden = !(isText || isInfo || isSlider || isLink);
     self.chevron.hidden = !(isText || isLink);
     self.slider.hidden = !isSlider;
     self.titleToToggle.active = !isSlider;
@@ -446,6 +447,20 @@ static void SPPrefsWrite(NSString *key, id value) {
 @end
 
 @implementation SystemProRootController
+
+// ⚠️ 默认必须显式设为 -1（首页）：NSInteger 默认 0 会直接落进"状态栏"子页，
+// 导致首页分页入口永远不可见（"其他功能看不见"的根因）。
+- (instancetype)init {
+    self = [super init];
+    if (self) _pageIndex = -1;
+    return self;
+}
+
+- (instancetype)initWithNibName:(NSString *)nibNameOrNil bundle:(NSBundle *)nibBundleOrNil {
+    self = [super initWithNibName:nibNameOrNil bundle:nibBundleOrNil];
+    if (self) _pageIndex = -1;
+    return self;
+}
 
 #pragma mark specifier 模型
 
@@ -710,15 +725,28 @@ static void SPPrefsWrite(NSString *key, id value) {
     }
 
     // 首页：分页入口 + 维护 + 关于
+    NSArray *keySets = @[
+        @[kStatusBarDateTime, kSilentStatusBarIcon, kForce5GAStatusBar],
+        @[kFiveIconDock, kTransparentDock, kDoubleTapToLock, kLongPressToLock, kHideHomeBar,
+          kHideHomePageDots, kHideHomeIconLabels, kHideWidgetLabels, kHideHomeIconLabelShadow],
+        @[kFolder4x4],
+        @[kDisableTodayView, kDisableAppLibrary, kDisableHomePullDownSearch, kDisableSeparators,
+          kDisablePhoneSeparators, kDisableMessagesSeparators, kNotificationNoWake,
+          kChargingWakeDisabled, kNoLockAfterRespring],
+        @[kSkipDeleteConfirmation, kHideZoomLevelControl, kAllowSelectAll, kMarkAlbumNotUserCreated],
+    ];
+    SPRow *r0 = [self lk:@"状态栏" sub:@"日期时间 / 静音小图标 / 5GA / 伪装电量" icon:@"antenna.radiowaves.left.and.right" idx:0];
+    SPRow *r1 = [self lk:@"桌面与 Dock" sub:@"Dock 五图标 / 透明 Dock / 手势锁屏 / 隐藏项" icon:@"apps.iphone" idx:1];
+    SPRow *r2 = [self lk:@"文件夹" sub:@"4×4 布局" icon:@"folder.fill" idx:2];
+    SPRow *r3 = [self lk:@"禁用与隐藏" sub:@"负一屏 / 资源库 / 分隔线 / 唤醒 / 注销锁屏" icon:@"eye.slash.fill" idx:3];
+    SPRow *r4 = [self lk:@"相册" sub:@"删除确认 / 缩放控件 / 全选 / 相簿分组" icon:@"photo" idx:4];
+    NSArray *pageRows = @[r0, r1, r2, r3, r4];
+    for (NSInteger i = 0; i < (NSInteger)pageRows.count; i++) {
+        ((SPRow *)pageRows[i]).countKeys = keySets[i];
+    }
     SPSection *pages = [self section:@""
         footer:@"开关按页归类，点条目进入子页；改动即时保存并热重载，左上角可注销。"
-        rows:@[
-            [self lk:@"状态栏" sub:@"日期时间 / 静音小图标 / 5GA / 伪装电量" icon:@"antenna.radiowaves.left.and.right" idx:0],
-            [self lk:@"桌面与 Dock" sub:@"Dock 五图标 / 透明 Dock / 手势锁屏 / 隐藏项" icon:@"apps.iphone" idx:1],
-            [self lk:@"文件夹" sub:@"4×4 布局" icon:@"folder.fill" idx:2],
-            [self lk:@"禁用与隐藏" sub:@"负一屏 / 资源库 / 分隔线 / 唤醒 / 注销锁屏" icon:@"eye.slash.fill" idx:3],
-            [self lk:@"相册" sub:@"删除确认 / 缩放控件 / 全选 / 相簿分组" icon:@"photo" idx:4],
-        ]];
+        rows:pageRows];
     self.model = [@[pages, maint, about] mutableCopy];
 }
 
@@ -734,6 +762,11 @@ static void SPPrefsWrite(NSString *key, id value) {
         cell = [[SPCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"cell"];
     }
     id value = (row.kind == SPRowKindInfo) ? row.defValue : self.prefs[row.key];
+    if (row.kind == SPRowKindLink && row.countKeys.count > 0) {
+        NSInteger on = 0;
+        for (NSString *k in row.countKeys) { if ([self.prefs[k] boolValue]) on++; }
+        value = [NSString stringWithFormat:@"%ld/%ld", (long)on, (long)row.countKeys.count];
+    }
     [cell configureWithRow:row value:value];
     __weak typeof(self) weakSelf = self;
     if (row.kind == SPRowKindSwitch) {

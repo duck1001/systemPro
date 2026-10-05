@@ -100,15 +100,40 @@ static id SPSingleton(NSString *clsName) {
     return nil;
 }
 
-// 读系统当前是否静音（SBRingerControl.isRingerMuted，取不到默认 YES）
+// 读系统当前是否静音：SBRingerControl（多选择器/KVC 尝试）→ AVSystemController 兜底。
+// 全部失败才默认 YES（宁可显示，不静默吞功能）。
 static BOOL SPRingerMuted(void) {
     id rc = SPSingleton(@"SBRingerControl");
     if (rc) {
-        @try {
-            if ([rc respondsToSelector:NSSelectorFromString(@"isRingerMuted")]) {
-                return [[rc valueForKey:@"isRingerMuted"] boolValue];
+        NSArray *selNames = @[@"isRingerMuted", @"ringerMuted", @"isMuted", @"muted"];
+        for (NSString *name in selNames) {
+            SEL s = NSSelectorFromString(name);
+            if ([rc respondsToSelector:s]) {
+                return ((BOOL (*)(id, SEL))objc_msgSend)(rc, s);
             }
-        } @catch (NSException *e) {}
+        }
+        NSArray *keyNames = @[@"isRingerMuted", @"ringerMuted", @"isMuted", @"muted"];
+        for (NSString *k in keyNames) {
+            @try {
+                id v = [rc valueForKey:k];
+                if ([v isKindOfClass:[NSNumber class]]) return [v boolValue];
+            } @catch (NSException *e) {}
+        }
+    }
+    // AVSystemController 兜底（经典 API：getAttribute:forKey:[error:]）
+    id av = SPSingleton(@"AVSystemController");
+    if (av) {
+        float val = 0;
+        SEL s3 = NSSelectorFromString(@"getAttribute:forKey:error:");
+        SEL s2 = NSSelectorFromString(@"getAttribute:forKey:");
+        if ([av respondsToSelector:s3]) {
+            ((BOOL (*)(id, SEL, void *, id, NSError *__autoreleasing *))objc_msgSend)(av, s3, &val, @"RingerMuted", NULL);
+            return val != 0;
+        }
+        if ([av respondsToSelector:s2]) {
+            ((BOOL (*)(id, SEL, void *, id))objc_msgSend)(av, s2, &val, @"RingerMuted");
+            return val != 0;
+        }
     }
     return YES;
 }
@@ -181,7 +206,7 @@ void SPStatusBarFeaturesInit(void) {
 
 %hook STUIStatusBarIndicatorQuietModeItem
 - (id)systemImageNameForUpdate:(id)update {
-    if (SPIsSpringBoard && SPBool(kSilentStatusBarIcon)) {
+    if (SPIsSpringBoard && SPBool(kSilentStatusBarIcon) && SPRingerMuted()) {
         NSString *sym = SPString(kSilentStatusBarIconSymbol, @"bell.slash.fill");
         return sym.length ? sym : @"bell.slash.fill";
     }
@@ -191,7 +216,7 @@ void SPStatusBarFeaturesInit(void) {
 
 %hook _UIStatusBarIndicatorQuietModeItem
 - (id)systemImageNameForUpdate:(id)update {
-    if (SPIsSpringBoard && SPBool(kSilentStatusBarIcon)) {
+    if (SPIsSpringBoard && SPBool(kSilentStatusBarIcon) && SPRingerMuted()) {
         NSString *sym = SPString(kSilentStatusBarIconSymbol, @"bell.slash.fill");
         return sym.length ? sym : @"bell.slash.fill";
     }

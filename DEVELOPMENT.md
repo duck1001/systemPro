@@ -96,6 +96,9 @@ git tag v0.0.2-2 && git push origin --tags   # 触发 Release（rootless + rooth
     实例：`_UIStatusBarDataQuietModeEntry initFromData:(id *)type:(int)focusName:(const char *)
     maxFocusLength:(int)imageName:(const char *)maxImageLength:(int)boolValue:(BOOL)`。
     选择器拼写/大小写也要对齐（`boolValue:` vs `BOOLValue:` 视系统版本，以 SystemX 二进制字符串为准）。
+15. **默认值陷阱**：分页控制器的"首页"标记必须显式初始化（`-init` 里 `_pageIndex = -1`）。
+    `NSInteger` 属性默认 0，会让"首页"等价于第一个子页 → 分页入口永远不可见
+    （"其他功能看不见"的实锤根因）。
 
 ## 4. 加新功能标准流程（照 hooks_final.tsv 施工）
 
