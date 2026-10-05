@@ -148,6 +148,27 @@
 - (id)systemImageNameForUpdate:(id)update;
 @end
 
+// 状态栏字符串视图（VPN 文字 / 5GA 等都在这一层）
+@interface STUIStatusBarStringView : UIView
+- (void)setText:(id)text;
+- (void)applyStyleAttributes:(id)attributes;
+@end
+
+@interface _UIStatusBarStringView : UIView
+- (void)setText:(id)text;
+- (void)applyStyleAttributes:(id)attributes;
+@end
+
+@interface STUIStatusBarWifiSignalView : UIView
+- (void)setActiveColor:(id)color;
+- (void)setInactiveColor:(id)color;
+- (void)applyStyleAttributes:(id)attributes;
+@end
+
+@interface _UIStatusBarWifiItem : NSObject
+- (id)_fillColorForUpdate:(id)update entry:(id)entry;
+@end
+
 // 真签名（实证自 iOS 反汇编）：focusName/imageName 是 C 字符串，data 是原始指针，
 // 绝不能用 id 声明（ARC 会插 objc_retain，对非对象指针 = 段错误，SpringBoard 安全模式）
 @interface _UIStatusBarDataQuietModeEntry : NSObject
